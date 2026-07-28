@@ -1,0 +1,24 @@
+=== Face (MeshRenderer) ===
+  worldBounds center: (-4.01, 2.54, -3.27)  size: (0.63, 0.79, 1.15)
+  localBounds center: (0.00, 0.00, 0.03)  size: (0.01, 0.01, 0.01)
+  lossyScale: (100.00, 100.00, 100.00)
+  materials: Warrior
+
+=== ShoulderPad.L (MeshRenderer) ===
+  worldBounds center: (-4.52, 2.04, -3.09)  size: (0.54, 0.25, 0.46)
+  localBounds center: (0.00, 0.00, 0.00)  size: (0.01, 0.00, 0.00)
+  lossyScale: (100.00, 100.00, 100.00)
+  materials: Warrior
+
+=== ShoulderPad.R (MeshRenderer) ===
+  worldBounds center: (-3.49, 2.04, -3.09)  size: (0.54, 0.25, 0.46)
+  localBounds center: (0.00, 0.00, 0.00)  size: (0.01, 0.00, 0.00)
+  lossyScale: (100.00, 100.00, 100.00)
+  materials: Warrior
+
+=== Warrior_Body (SkinnedMeshRenderer) ===
+  worldBounds center: (-4.01, 1.43, -3.29)  size: (3.07, 2.92, 1.12)
+  localBounds center: (0.00, 0.01, 0.00)  size: (0.03, 0.03, 0.01)
+  lossyScale: (100.00, 100.00, 100.00)
+  materials: Warrior
+
