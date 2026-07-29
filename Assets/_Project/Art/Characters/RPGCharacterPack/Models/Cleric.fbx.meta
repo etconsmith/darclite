@@ -87,7 +87,7 @@ ModelImporter:
   humanDescription:
     serializedVersion: 3
     human:
-    - boneName: Hips
+    - boneName: Body
       humanName: Hips
       limit:
         min: {x: 0, y: 0, z: 0}
@@ -240,7 +240,7 @@ ModelImporter:
         length: 0
         modified: 0
     skeleton:
-    - name: Cleric
+    - name: Warrior
       parentName: 
       position: {x: 0, y: 0, z: 0}
       rotation: {x: 0, y: 0, z: 0, w: 1}
@@ -275,11 +275,6 @@ ModelImporter:
       position: {x: -3.9364067e-14, y: 0.0032525281, z: 3.05118e-11}
       rotation: {x: -0.08232194, y: 0.0000008295085, z: 0.000000018395507, w: 0.9966058}
       scale: {x: 1, y: 0.9999999, z: 1}
-    - name: ShoulderPads
-      parentName: 
-      position: {x: -0.000006385662, y: -0.015393268, z: 0.0031119494}
-      rotation: {x: -0.7322748, y: -0.00000020726706, z: -0.0000002228626, w: 0.6810093}
-      scale: {x: 1, y: 1.0000001, z: 0.9999999}
     - name: Neck
       parentName: 
       position: {x: 8.5023985e-13, y: 0.0043919776, z: 9.701799e-11}
@@ -290,9 +285,9 @@ ModelImporter:
       position: {x: 2.0901747e-13, y: 0.0013127518, z: -1.1628725e-12}
       rotation: {x: 0.0000000037252907, y: 0.0002754753, z: 1.0262249e-12, w: 1}
       scale: {x: 0.99999994, y: 1, z: 0.9999998}
-    - name: Head
+    - name: Face
       parentName: 
-      position: {x: -0.00008460321, y: 0.005675376, z: -0.0021976267}
+      position: {x: -0.000006400852, y: -0.021271471, z: 0.000031043215}
       rotation: {x: -0.70710677, y: -0.00019452622, z: -0.00019452619, w: 0.7071068}
       scale: {x: 1.0000001, y: 1, z: 0.9999999}
     - name: Head_end
@@ -310,6 +305,11 @@ ModelImporter:
       position: {x: 1.07315046e-10, y: 0.0025820567, z: 4.1939074e-12}
       rotation: {x: -0.27524987, y: 0.674789, z: 0.22148933, w: 0.6479505}
       scale: {x: 0.9999998, y: 0.9999998, z: 1.0000001}
+    - name: ShoulderPad.L
+      parentName: 
+      position: {x: -0.000038176775, y: 0.0019644627, z: 0.0016949403}
+      rotation: {x: 0.021393444, y: -0.022667412, z: -0.6860406, w: 0.72689533}
+      scale: {x: 1, y: 1, z: 0.99999964}
     - name: LowerArm.L
       parentName: 
       position: {x: 3.7252902e-11, y: 0.003922336, z: 8.754432e-10}
@@ -360,6 +360,11 @@ ModelImporter:
       position: {x: 0.0000000010829605, y: 0.0025820604, z: -1.2469172e-11}
       rotation: {x: -0.27525, y: -0.6747889, z: -0.22148947, w: 0.6479505}
       scale: {x: 1, y: 0.99999994, z: 1}
+    - name: ShoulderPad.R
+      parentName: 
+      position: {x: 0.00003817737, y: 0.001964464, z: 0.0016949475}
+      rotation: {x: 0.02139341, y: 0.02266747, z: 0.6860405, w: 0.7268954}
+      scale: {x: 0.99999976, y: 0.9999999, z: 0.99999994}
     - name: LowerArm.R
       parentName: 
       position: {x: -3.7252902e-11, y: 0.0039223353, z: -1.7462298e-10}
@@ -450,9 +455,9 @@ ModelImporter:
       position: {x: -0, y: 0.0010722862, z: 0}
       rotation: {x: 0, y: -0, z: -0, w: 1}
       scale: {x: 1, y: 1, z: 1}
-    - name: Cleric
+    - name: Warrior_Body
       parentName: 
-      position: {x: -0, y: 0, z: 0.16392289}
+      position: {x: -0, y: 0, z: 0}
       rotation: {x: -0.7071068, y: 0, z: -0, w: 0.7071067}
       scale: {x: 100, y: 100, z: 100}
     armTwist: 0.5
@@ -462,16 +467,16 @@ ModelImporter:
     armStretch: 0.05
     legStretch: 0.05
     feetSpacing: 0
-    globalScale: 0
+    globalScale: 1
     rootMotionBoneName: 
     hasTranslationDoF: 0
     hasExtraRoot: 0
     skeletonHasParents: 0
-  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  lastHumanDescriptionAvatarSource: {fileID: 9000000, guid: d3ed5e3ed5fe9f549853fe326910e3d3, type: 3}
   autoGenerateAvatarMappingIfUnspecified: 1
   animationType: 3
   humanoidOversampling: 1
-  avatarSetup: 1
+  avatarSetup: 2
   addHumanoidExtraRootOnlyWhenUsingAvatar: 1
   importBlendShapeDeformPercent: 1
   remapMaterialsIfMaterialImportModeIsNone: 0

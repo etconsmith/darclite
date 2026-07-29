@@ -1,4 +1,5 @@
 using Darclite.CameraSystem;
+using Darclite.Combat;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -35,6 +36,9 @@ namespace Darclite.Player
         [SerializeField] private float animatorSpeedDamping = 0.15f;
         [SerializeField] private float diagonalRunAnimationSpeedMultiplier = 2f;
 
+        [Header("Hit Reaction")]
+        [SerializeField, Range(0f, 1f)] private float hitStunMoveSpeedMultiplier = 0.15f;
+
         [Header("Dodge")]
         [SerializeField] private float doubleTapWindow = 0.3f;
         [SerializeField] private float dodgeSpeed = 54f;
@@ -70,9 +74,15 @@ namespace Darclite.Player
         private float _lastSTapTime = -999f;
         private float _lastDTapTime = -999f;
 
+        private Combatant _combatant;
+        private PlayerCombat _playerCombat;
+
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
+            _combatant = GetComponent<Combatant>();
+            _playerCombat = GetComponent<PlayerCombat>();
+
             if (animator == null)
             {
                 animator = GetComponentInChildren<Animator>();
@@ -92,13 +102,46 @@ namespace Darclite.Player
                 _orbitCamera = _mainCamera != null ? _mainCamera.GetComponent<ThirdPersonOrbitCamera>() : null;
             }
 
+            bool isKnockedBack = _combatant != null && _combatant.IsBeingKnockedBack;
+            bool isStunned = !isKnockedBack && _combatant != null && _combatant.IsStunned;
+            bool isSelfAttacking = _playerCombat != null && _playerCombat.IsAttacking;
+            bool canInitiateJump = !isKnockedBack && !isStunned && !isSelfAttacking;
+
+            ApplyGravityAndJump(canInitiateJump);
+
+            if (isKnockedBack)
+            {
+                // Combatant's knockback coroutine has exclusive control of the CharacterController.
+                UpdateAnimator(Vector2.zero, false);
+                return;
+            }
+
+            if (isSelfAttacking)
+            {
+                _controller.Move(new Vector3(0f, _verticalVelocity.y, 0f) * Time.deltaTime);
+                UpdateAnimator(Vector2.zero, false);
+                return;
+            }
+
+            if (isStunned)
+            {
+                // Can't attack or dodge while reeling from a hit, but still crawl at a
+                // fraction of normal speed instead of being fully frozen in place.
+                Vector2 stunnedMoveInput = ReadMoveInput();
+                Vector3 stunnedMoveDirection = CalculateCameraRelativeDirection(stunnedMoveInput);
+                Vector3 stunnedVelocity = stunnedMoveDirection * walkSpeed * hitStunMoveSpeedMultiplier;
+                stunnedVelocity.y = _verticalVelocity.y;
+                _controller.Move(stunnedVelocity * Time.deltaTime);
+                RotateTowardsCamera();
+                UpdateAnimator(Vector2.zero, false);
+                return;
+            }
+
             CheckDodgeInput();
 
             Vector2 moveInput = ReadMoveInput();
             Vector3 moveDirection = CalculateCameraRelativeDirection(moveInput);
             bool isSprinting = IsSprintHeld();
-
-            ApplyGravityAndJump();
 
             if (_isDodging)
             {
@@ -300,27 +343,36 @@ namespace Darclite.Player
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
 
-        private void ApplyGravityAndJump()
+        private void ApplyGravityAndJump(bool canInitiateJump)
         {
             if (_isPreparingJump)
             {
-                _verticalVelocity.y = groundedStickForce;
-                _jumpAnticipationTimer += Time.deltaTime;
-
-                if (_jumpAnticipationTimer >= jumpAnticipationDelay)
+                if (!canInitiateJump)
                 {
-                    _verticalVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+                    // Getting hit or throwing a punch cancels a jump that hasn't launched yet,
+                    // so it can't fire later mid-attack/mid-hit-reaction.
                     _isPreparingJump = false;
                 }
+                else
+                {
+                    _verticalVelocity.y = groundedStickForce;
+                    _jumpAnticipationTimer += Time.deltaTime;
 
-                return;
+                    if (_jumpAnticipationTimer >= jumpAnticipationDelay)
+                    {
+                        _verticalVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+                        _isPreparingJump = false;
+                    }
+
+                    return;
+                }
             }
 
             if (_controller.isGrounded)
             {
                 _verticalVelocity.y = groundedStickForce;
 
-                if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+                if (canInitiateJump && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
                 {
                     _isPreparingJump = true;
                     _jumpAnticipationTimer = 0f;

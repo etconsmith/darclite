@@ -8,6 +8,12 @@ namespace Darclite.EditorTools
     {
         private const string ControllerPath = "Assets/_Project/Animations/PlayerAnimatorController.controller";
         private const string ClipsFolder = "Assets/_Project/Animations/Mixamo";
+        private const string FightClipsFolder = "Assets/_Project/Animations/FightAnimations";
+
+        // Also used by SceneBootstrapper to scale the attack-cooldown/stun durations it derives
+        // from raw clip lengths, so gameplay pacing matches the sped-up animator playback.
+        public const float AttackSpeedMultiplier = 1.5f * 1.3f * 1.5f;
+        public const float HitSpeedMultiplier = 2f;
 
         [MenuItem("Darclite/Create Player Animator Controller")]
         public static void CreateController()
@@ -29,6 +35,11 @@ namespace Darclite.EditorTools
             controller.AddParameter("DodgeRight", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("IsDodging", AnimatorControllerParameterType.Bool);
             controller.AddParameter("IsMoving", AnimatorControllerParameterType.Bool);
+            controller.AddParameter("Attack", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("AttackIndex", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Hit", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("HitIndex", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Knockback", AnimatorControllerParameterType.Trigger);
 
             AnimationClip idle = LoadClip("Idle");
             AnimationClip walk = LoadClip("Walk");
@@ -44,6 +55,22 @@ namespace Darclite.EditorTools
             AnimationClip dodgeBack = LoadClip("DodgeBack");
             AnimationClip dodgeLeft = LoadClip("DodgeLeft");
             AnimationClip dodgeRight = LoadClip("DodgeRight");
+
+            AnimationClip bodyPunchLeft = LoadClip(FightClipsFolder, "BodyPunchLeft");
+            AnimationClip bodyPunchRight = LoadClip(FightClipsFolder, "BodyPunchRight");
+            AnimationClip headPunchLeft = LoadClip(FightClipsFolder, "HeadPunchLeft");
+            AnimationClip headPunchRight = LoadClip(FightClipsFolder, "HeadPunchRight");
+            AnimationClip bodyPunchLeft2 = LoadClip(FightClipsFolder, "BodyPunchLeft2");
+            AnimationClip bodyPunchRight2 = LoadClip(FightClipsFolder, "BodyPunchRight2");
+            AnimationClip headPunchLeft2 = LoadClip(FightClipsFolder, "HeadPunchLeft2");
+            AnimationClip headPunchRight2 = LoadClip(FightClipsFolder, "HeadPunchRight2");
+            AnimationClip headHeavyLeft = LoadClip(FightClipsFolder, "HeadHeavyLeft");
+            AnimationClip headHeavyRight = LoadClip(FightClipsFolder, "HeadHeavyRight");
+            AnimationClip bodyHitLeft = LoadClip(FightClipsFolder, "BodyHitLeft");
+            AnimationClip bodyHitRight = LoadClip(FightClipsFolder, "BodyHitRight");
+            AnimationClip headHitLeft = LoadClip(FightClipsFolder, "HeadHitLeft");
+            AnimationClip headHitRight = LoadClip(FightClipsFolder, "HeadHitRight");
+            AnimationClip knockback = LoadClip(FightClipsFolder, "Knockback");
 
             AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
@@ -90,6 +117,86 @@ namespace Darclite.EditorTools
             AddDodgeState(stateMachine, locomotionState, "Dodge Left", "DodgeLeft", dodgeLeft);
             AddDodgeState(stateMachine, locomotionState, "Dodge Right", "DodgeRight", dodgeRight);
 
+            BlendTree attackTree = new BlendTree
+            {
+                name = "Attack Blend",
+                blendType = BlendTreeType.Simple1D,
+                blendParameter = "AttackIndex",
+                useAutomaticThresholds = false
+            };
+            AssetDatabase.AddObjectToAsset(attackTree, controller);
+
+            if (bodyPunchLeft != null) attackTree.AddChild(bodyPunchLeft, 0f);
+            if (bodyPunchRight != null) attackTree.AddChild(bodyPunchRight, 1f);
+            if (headPunchLeft != null) attackTree.AddChild(headPunchLeft, 2f);
+            if (headPunchRight != null) attackTree.AddChild(headPunchRight, 3f);
+            if (bodyPunchLeft2 != null) attackTree.AddChild(bodyPunchLeft2, 4f);
+            if (bodyPunchRight2 != null) attackTree.AddChild(bodyPunchRight2, 5f);
+            if (headPunchLeft2 != null) attackTree.AddChild(headPunchLeft2, 6f);
+            if (headPunchRight2 != null) attackTree.AddChild(headPunchRight2, 7f);
+            if (headHeavyLeft != null) attackTree.AddChild(headHeavyLeft, 8f);
+            if (headHeavyRight != null) attackTree.AddChild(headHeavyRight, 9f);
+
+            AnimatorState attackState = stateMachine.AddState("Attack");
+            attackState.motion = attackTree;
+            attackState.speed = AttackSpeedMultiplier;
+
+            AnimatorStateTransition toAttack = locomotionState.AddTransition(attackState);
+            toAttack.hasExitTime = false;
+            toAttack.duration = 0.05f;
+            toAttack.AddCondition(AnimatorConditionMode.If, 0, "Attack");
+
+            AnimatorStateTransition attackToLocomotion = attackState.AddTransition(locomotionState);
+            attackToLocomotion.hasExitTime = true;
+            attackToLocomotion.exitTime = 0.9f;
+            attackToLocomotion.duration = 0.1f;
+
+            BlendTree hitTree = new BlendTree
+            {
+                name = "Hit Blend",
+                blendType = BlendTreeType.Simple1D,
+                blendParameter = "HitIndex",
+                useAutomaticThresholds = false
+            };
+            AssetDatabase.AddObjectToAsset(hitTree, controller);
+
+            if (bodyHitLeft != null) hitTree.AddChild(bodyHitLeft, 0f);
+            if (bodyHitRight != null) hitTree.AddChild(bodyHitRight, 1f);
+            if (headHitLeft != null) hitTree.AddChild(headHitLeft, 2f);
+            if (headHitRight != null) hitTree.AddChild(headHitRight, 3f);
+
+            AnimatorState hitState = stateMachine.AddState("Hit");
+            hitState.motion = hitTree;
+            hitState.speed = HitSpeedMultiplier;
+
+            AnimatorStateTransition toHit = stateMachine.AddAnyStateTransition(hitState);
+            toHit.hasExitTime = false;
+            toHit.duration = 0.05f;
+            // Getting hit again while already in the Hit state should restart the reaction from
+            // its impact frame (matching the new HitIndex) instead of continuing wherever the
+            // previous hit's playback was.
+            toHit.canTransitionToSelf = true;
+            toHit.AddCondition(AnimatorConditionMode.If, 0, "Hit");
+
+            AnimatorStateTransition hitToLocomotion = hitState.AddTransition(locomotionState);
+            hitToLocomotion.hasExitTime = true;
+            hitToLocomotion.exitTime = 0.9f;
+            hitToLocomotion.duration = 0.1f;
+
+            AnimatorState knockbackState = stateMachine.AddState("Knockback");
+            knockbackState.motion = knockback;
+
+            AnimatorStateTransition toKnockback = stateMachine.AddAnyStateTransition(knockbackState);
+            toKnockback.hasExitTime = false;
+            toKnockback.duration = 0.05f;
+            toKnockback.canTransitionToSelf = false;
+            toKnockback.AddCondition(AnimatorConditionMode.If, 0, "Knockback");
+
+            AnimatorStateTransition knockbackToLocomotion = knockbackState.AddTransition(locomotionState);
+            knockbackToLocomotion.hasExitTime = true;
+            knockbackToLocomotion.exitTime = 0.9f;
+            knockbackToLocomotion.duration = 0.15f;
+
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
 
@@ -129,7 +236,12 @@ namespace Darclite.EditorTools
 
         private static AnimationClip LoadClip(string name)
         {
-            string path = $"{ClipsFolder}/{name}.fbx";
+            return LoadClip(ClipsFolder, name);
+        }
+
+        private static AnimationClip LoadClip(string folder, string name)
+        {
+            string path = $"{folder}/{name}.fbx";
             Object[] assets = AssetDatabase.LoadAllAssetsAtPath(path);
             foreach (Object asset in assets)
             {

@@ -12,6 +12,8 @@ Shader "Darclite/ToonLit"
         _RimStrength("Rim Strength", Range(0, 1)) = 0.25
         _OutlineColor("Outline Color", Color) = (0.05, 0.05, 0.08, 1)
         _OutlineWidth("Outline Width", Range(0, 0.05)) = 0.015
+        _FlashColor("Flash Color", Color) = (1, 0, 0, 1)
+        _FlashAmount("Flash Amount", Range(0, 1)) = 0
     }
 
     SubShader
@@ -58,6 +60,8 @@ Shader "Darclite/ToonLit"
                 float4 _RimColor;
                 float _RimPower;
                 float _RimStrength;
+                float4 _FlashColor;
+                float _FlashAmount;
             CBUFFER_END
 
             Varyings vert(Attributes IN)
@@ -91,6 +95,7 @@ Shader "Darclite/ToonLit"
                 rim = pow(rim, _RimPower) * _RimStrength;
 
                 half3 finalColor = diffuse + rim * _RimColor.rgb;
+                finalColor = lerp(finalColor, _FlashColor.rgb, _FlashAmount);
 
                 return half4(finalColor, texColor.a);
             }

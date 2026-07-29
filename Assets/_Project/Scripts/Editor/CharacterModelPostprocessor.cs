@@ -9,6 +9,7 @@ namespace Darclite.EditorTools
     {
         private const string CharactersFolder = "Assets/_Project/Art/Characters";
         private const string MixamoAnimationsFolder = "Assets/_Project/Animations/Mixamo";
+        private const string FightAnimationsFolder = "Assets/_Project/Animations/FightAnimations";
 
         private static readonly (string boneName, string humanName)[] BoneMap =
         {
@@ -43,6 +44,11 @@ namespace Darclite.EditorTools
             return assetPath.Replace('\\', '/').StartsWith(MixamoAnimationsFolder);
         }
 
+        private bool IsFightAnimationAsset()
+        {
+            return assetPath.Replace('\\', '/').StartsWith(FightAnimationsFolder);
+        }
+
         private void OnPreprocessModel()
         {
             ModelImporter importer = (ModelImporter)assetImporter;
@@ -57,14 +63,14 @@ namespace Darclite.EditorTools
                 return;
             }
 
-            if (IsMixamoAnimationAsset())
+            if (IsMixamoAnimationAsset() || IsFightAnimationAsset())
             {
                 importer.animationType = ModelImporterAnimationType.Human;
                 importer.importAnimation = true;
 
                 string fileName = Path.GetFileNameWithoutExtension(assetPath);
                 string lowerFileName = fileName.ToLowerInvariant();
-                bool shouldLoop = !lowerFileName.Contains("jump") && !lowerFileName.Contains("dodge");
+                bool shouldLoop = IsMixamoAnimationAsset() && !lowerFileName.Contains("jump") && !lowerFileName.Contains("dodge");
 
                 TakeInfo[] takes = importer.importedTakeInfos;
                 if (takes != null && takes.Length > 0)
@@ -150,23 +156,30 @@ namespace Darclite.EditorTools
         private static SkeletonBone[] BuildSkeletonBones(Transform root)
         {
             var bones = new List<SkeletonBone>();
-            CollectSkeleton(root, bones);
+            var seenNames = new HashSet<string>();
+            CollectSkeleton(root, bones, seenNames);
             return bones.ToArray();
         }
 
-        private static void CollectSkeleton(Transform t, List<SkeletonBone> bones)
+        private static void CollectSkeleton(Transform t, List<SkeletonBone> bones, HashSet<string> seenNames)
         {
-            bones.Add(new SkeletonBone
+            // Some rigs (e.g. Cleric) have a genuine duplicate bone name deeper in the hierarchy.
+            // Only the first occurrence is kept, matching FindDescendant's resolution order, so
+            // the Avatar system can't ambiguously resolve a mapped human bone to the wrong transform.
+            if (seenNames.Add(t.name))
             {
-                name = t.name,
-                position = t.localPosition,
-                rotation = t.localRotation,
-                scale = t.localScale
-            });
+                bones.Add(new SkeletonBone
+                {
+                    name = t.name,
+                    position = t.localPosition,
+                    rotation = t.localRotation,
+                    scale = t.localScale
+                });
+            }
 
             foreach (Transform child in t)
             {
-                CollectSkeleton(child, bones);
+                CollectSkeleton(child, bones, seenNames);
             }
         }
 
