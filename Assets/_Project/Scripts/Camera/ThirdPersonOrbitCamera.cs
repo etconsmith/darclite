@@ -32,6 +32,10 @@ namespace Darclite.CameraSystem
 
         public float Yaw => _yaw;
 
+        // Set by UI systems (e.g. NPC dialogue) that need the mouse free to click on-screen
+        // elements instead of driving camera look/zoom.
+        public static bool CursorUnlockRequested;
+
         public void Shake(float duration, float magnitude)
         {
             _shakeDuration = Mathf.Max(duration, 0.01f);
@@ -55,8 +59,12 @@ namespace Darclite.CameraSystem
             }
 
             HandleCursorState();
-            HandleRotationInput();
-            HandleZoomInput();
+
+            if (!CursorUnlockRequested)
+            {
+                HandleRotationInput();
+                HandleZoomInput();
+            }
 
             Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0f);
             Vector3 pivot = target.position + targetOffset;
@@ -70,6 +78,13 @@ namespace Darclite.CameraSystem
 
         private static void HandleCursorState()
         {
+            if (CursorUnlockRequested)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                return;
+            }
+
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }

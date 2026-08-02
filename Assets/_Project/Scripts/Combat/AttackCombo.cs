@@ -3,6 +3,13 @@ using UnityEngine;
 
 namespace Darclite.Combat
 {
+    public enum PunchSide
+    {
+        None,
+        Left,
+        Right
+    }
+
     [AddComponentMenu("Darclite/Attack Combo")]
     public class AttackCombo : MonoBehaviour
     {
@@ -34,9 +41,21 @@ namespace Darclite.Combat
 
         public bool IsAttacking => _attackCooldownTimer > 0f;
 
+        // Which side the currently active light punch is coming from — None while not attacking
+        // or mid-heavy-swing. Lets a defender's block/dodge react to the correct side.
+        public PunchSide CurrentAttackSide { get; private set; } = PunchSide.None;
+
+        // Whether the most recently thrown attack was absorbed by the target's block/dodge.
+        // Used by AI to decide whether to change strategy after being blocked.
+        public bool WasLastAttackBlocked { get; private set; }
+
+        public int ComboCount => _comboCount;
+
         private float _attackCooldownTimer;
         private int _comboCount;
         private float _lastLandedTime = -999f;
+        private Combatant _combatant;
+        private CharacterAudio _characterAudio;
 
         private void Awake()
         {
@@ -44,6 +63,9 @@ namespace Darclite.Combat
             {
                 animator = GetComponentInChildren<Animator>();
             }
+
+            _combatant = GetComponent<Combatant>();
+            _characterAudio = GetComponent<CharacterAudio>();
         }
 
         private void Update()
@@ -51,6 +73,10 @@ namespace Darclite.Combat
             if (_attackCooldownTimer > 0f)
             {
                 _attackCooldownTimer -= Time.deltaTime;
+            }
+            else
+            {
+                CurrentAttackSide = PunchSide.None;
             }
 
             if (_comboCount > 0 && Time.time - _lastLandedTime > comboResetTime)
@@ -85,6 +111,8 @@ namespace Darclite.Combat
 
             PlayAttackAnimation(index);
             _attackCooldownTimer = duration;
+            CurrentAttackSide = (hitIndex % 2 == 0) ? PunchSide.Left : PunchSide.Right;
+            WasLastAttackBlocked = false;
 
             StartCoroutine(ResolveHitAfterDelay(impactDelay, target, hitIndex, lightDamage, false, isComboHit: true));
         }
@@ -97,6 +125,8 @@ namespace Darclite.Combat
 
             PlayAttackAnimation(8 + heavyIndex);
             _attackCooldownTimer = duration;
+            CurrentAttackSide = PunchSide.None;
+            WasLastAttackBlocked = false;
 
             StartCoroutine(ResolveHitAfterDelay(impactDelay, target, -1, heavyDamage, true, isComboHit: false));
 
@@ -110,9 +140,18 @@ namespace Darclite.Combat
             // the punch animation's contact frame instead of firing the instant the swing starts.
             yield return new WaitForSeconds(impactDelay);
 
+            // Got hit ourselves while winding up — our swing never lands, we just take the hit
+            // reaction instead. Without this check both fighters could land a "trade" any time
+            // their windups overlapped.
+            if (_combatant != null && (_combatant.IsStunned || _combatant.IsBeingKnockedBack))
+            {
+                yield break;
+            }
+
             if (TryHitTarget(transform.position, target, hitIndex, damage, isHeavy))
             {
                 _lastLandedTime = Time.time;
+                _characterAudio?.PlayPunchImpact(isHeavy);
                 if (isComboHit)
                 {
                     _comboCount++;
@@ -150,13 +189,30 @@ namespace Darclite.Combat
                 return false;
             }
 
-            if (isHeavy)
+            BlockDodge targetGuard = target.GetComponent<BlockDodge>();
+            if (targetGuard != null && targetGuard.CurrentGuardState == GuardState.Guarding)
             {
-                targetCombatant.TakeKnockback(damage, selfPosition);
+                // Fully absorbed by the block/dodge — no damage, doesn't count as landing.
+                targetGuard.OnAttackBlocked();
+                WasLastAttackBlocked = true;
+                return false;
+            }
+
+            bool isBlockBroken = targetGuard != null && targetGuard.CurrentGuardState == GuardState.Vulnerable;
+            int finalDamage = isBlockBroken ? damage * 2 : damage;
+
+            if (isHeavy || isBlockBroken)
+            {
+                targetCombatant.TakeKnockback(finalDamage, selfPosition);
             }
             else
             {
                 targetCombatant.TakeHit(hitIndex, damage);
+            }
+
+            if (isBlockBroken)
+            {
+                targetGuard.OnBlockBroken();
             }
 
             return true;

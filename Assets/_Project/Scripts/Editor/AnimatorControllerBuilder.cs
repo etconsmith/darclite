@@ -12,8 +12,15 @@ namespace Darclite.EditorTools
 
         // Also used by SceneBootstrapper to scale the attack-cooldown/stun durations it derives
         // from raw clip lengths, so gameplay pacing matches the sped-up animator playback.
-        public const float AttackSpeedMultiplier = 1.5f * 1.3f * 1.5f;
+        // Reverted back to the raw, unscaled clip speed.
+        public const float AttackSpeedMultiplier = 1f;
         public const float HitSpeedMultiplier = 2f;
+
+        // Also used by SceneBootstrapper/Combatant so the Knockback state's real playback time
+        // exactly matches Combatant's physical slide duration — this lets Combatant treat its own
+        // 0-1 slide progress as the clip's real normalized time when timing the ground-contact arc.
+        // Bumped up twice now (0.8 -> 1 -> 1.4) to slow the whole knockback animation down further.
+        public const float KnockbackDuration = 1.4f;
 
         [MenuItem("Darclite/Create Player Animator Controller")]
         public static void CreateController()
@@ -40,6 +47,10 @@ namespace Darclite.EditorTools
             controller.AddParameter("Hit", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("HitIndex", AnimatorControllerParameterType.Float);
             controller.AddParameter("Knockback", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("Guard", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("GuardIndex", AnimatorControllerParameterType.Float);
+            controller.AddParameter("Death", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("DeathIndex", AnimatorControllerParameterType.Float);
 
             AnimationClip idle = LoadClip("Idle");
             AnimationClip walk = LoadClip("Walk");
@@ -71,6 +82,13 @@ namespace Darclite.EditorTools
             AnimationClip headHitLeft = LoadClip(FightClipsFolder, "HeadHitLeft");
             AnimationClip headHitRight = LoadClip(FightClipsFolder, "HeadHitRight");
             AnimationClip knockback = LoadClip(FightClipsFolder, "Knockback");
+            AnimationClip dodgeRightGuard = LoadClip(FightClipsFolder, "dodgeright");
+            AnimationClip dodgeLeftGuard = LoadClip(FightClipsFolder, "dodgeleft");
+            AnimationClip block1 = LoadClip(FightClipsFolder, "block");
+            AnimationClip block2 = LoadClip(FightClipsFolder, "block2");
+            AnimationClip death1 = LoadClip(FightClipsFolder, "Death");
+            AnimationClip death2 = LoadClip(FightClipsFolder, "Death2");
+            AnimationClip death3 = LoadClip(FightClipsFolder, "Death3");
 
             AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
@@ -185,6 +203,7 @@ namespace Darclite.EditorTools
 
             AnimatorState knockbackState = stateMachine.AddState("Knockback");
             knockbackState.motion = knockback;
+            knockbackState.speed = (knockback != null && knockback.length > 0f) ? knockback.length / KnockbackDuration : 1f;
 
             AnimatorStateTransition toKnockback = stateMachine.AddAnyStateTransition(knockbackState);
             toKnockback.hasExitTime = false;
@@ -192,10 +211,77 @@ namespace Darclite.EditorTools
             toKnockback.canTransitionToSelf = false;
             toKnockback.AddCondition(AnimatorConditionMode.If, 0, "Knockback");
 
+            // Exit as late as possible (unlike the other states' 0.9) — Knockback's state speed is
+            // synced so its full length equals Combatant's knockbackDuration, so exitTime=0.9 would
+            // start crossfading into Locomotion (blending in whatever pose movement produces at
+            // that instant) *before* the slide coroutine's own control window ends at 1.0, making
+            // hip height inconsistent run-to-run right when our correction curve needs it steady.
             AnimatorStateTransition knockbackToLocomotion = knockbackState.AddTransition(locomotionState);
             knockbackToLocomotion.hasExitTime = true;
-            knockbackToLocomotion.exitTime = 0.9f;
-            knockbackToLocomotion.duration = 0.15f;
+            knockbackToLocomotion.exitTime = 0.98f;
+            knockbackToLocomotion.duration = 0.1f;
+
+            BlendTree guardTree = new BlendTree
+            {
+                name = "Guard Blend",
+                blendType = BlendTreeType.Simple1D,
+                blendParameter = "GuardIndex",
+                useAutomaticThresholds = false
+            };
+            AssetDatabase.AddObjectToAsset(guardTree, controller);
+
+            if (dodgeRightGuard != null) guardTree.AddChild(dodgeRightGuard, 0f);
+            if (dodgeLeftGuard != null) guardTree.AddChild(dodgeLeftGuard, 1f);
+            if (block1 != null) guardTree.AddChild(block1, 2f);
+            if (block2 != null) guardTree.AddChild(block2, 3f);
+
+            AnimatorState guardState = stateMachine.AddState("Guard");
+            guardState.motion = guardTree;
+
+            AnimatorStateTransition toGuard = stateMachine.AddAnyStateTransition(guardState);
+            toGuard.hasExitTime = false;
+            toGuard.duration = 0.05f;
+            toGuard.canTransitionToSelf = false;
+            toGuard.AddCondition(AnimatorConditionMode.If, 0, "Guard");
+
+            AnimatorStateTransition guardToLocomotion = guardState.AddTransition(locomotionState);
+            guardToLocomotion.hasExitTime = true;
+            guardToLocomotion.exitTime = 0.9f;
+            guardToLocomotion.duration = 0.1f;
+
+            // Attack's transition only originates from Locomotion (unlike Hit/Knockback/Guard,
+            // which use AnyState), so without this, an attack fired right as Guard ends would
+            // have to wait out Guard's own exit-time transition first, lagging behind the
+            // already-ticking attack-cooldown/impact-delay timers. Let it cut in immediately.
+            AnimatorStateTransition guardToAttack = guardState.AddTransition(attackState);
+            guardToAttack.hasExitTime = false;
+            guardToAttack.duration = 0.05f;
+            guardToAttack.AddCondition(AnimatorConditionMode.If, 0, "Attack");
+
+            BlendTree deathTree = new BlendTree
+            {
+                name = "Death Blend",
+                blendType = BlendTreeType.Simple1D,
+                blendParameter = "DeathIndex",
+                useAutomaticThresholds = false
+            };
+            AssetDatabase.AddObjectToAsset(deathTree, controller);
+
+            if (death1 != null) deathTree.AddChild(death1, 0f);
+            if (death2 != null) deathTree.AddChild(death2, 1f);
+            if (death3 != null) deathTree.AddChild(death3, 2f);
+
+            AnimatorState deathState = stateMachine.AddState("Death");
+            deathState.motion = deathTree;
+
+            // No outgoing transition at all — once dead, the clip (non-looping, per
+            // CharacterModelPostprocessor's FightAnimations handling) just holds its last frame,
+            // and EnemyDeath disables the Animator afterward to lock it in permanently.
+            AnimatorStateTransition toDeath = stateMachine.AddAnyStateTransition(deathState);
+            toDeath.hasExitTime = false;
+            toDeath.duration = 0.1f;
+            toDeath.canTransitionToSelf = false;
+            toDeath.AddCondition(AnimatorConditionMode.If, 0, "Death");
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();

@@ -12,6 +12,14 @@
 /[Mm]emoryCaptures/
 /[Rr]ecordings/
 
+# Unity's auto-generated crash-recovery scene backups — not real project content.
+/Assets/_Recovery/
+/Assets/_Recovery.meta
+
+# LLMUnity's auto-downloaded native runtime binaries (~4GB, every platform) — LLMUnity fetches
+# this itself on setup, so it doesn't belong in git. See Assets/StreamingAssets/LlamaLib-*/setup/.
+/Assets/StreamingAssets/LlamaLib-*/
+
 .vs/
 .idea/
 ExportedObj/

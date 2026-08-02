@@ -1,5 +1,7 @@
 using Darclite.CameraSystem;
 using Darclite.Combat;
+using Darclite.Core;
+using Darclite.Dialogue;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -19,6 +21,7 @@ namespace Darclite.Player
         private static readonly int DodgeRightParam = Animator.StringToHash("DodgeRight");
         private static readonly int IsDodgingParam = Animator.StringToHash("IsDodging");
         private static readonly int IsMovingParam = Animator.StringToHash("IsMoving");
+        private static readonly int AttackParam = Animator.StringToHash("Attack");
 
         [Header("Movement")]
         [SerializeField] private float walkSpeed = 3f;
@@ -39,6 +42,10 @@ namespace Darclite.Player
         [Header("Hit Reaction")]
         [SerializeField, Range(0f, 1f)] private float hitStunMoveSpeedMultiplier = 0.15f;
 
+        [Header("Footsteps")]
+        [SerializeField] private float walkStepInterval = 0.45f;
+        [SerializeField] private float runStepInterval = 0.3f;
+
         [Header("Dodge")]
         [SerializeField] private float doubleTapWindow = 0.3f;
         [SerializeField] private float dodgeSpeed = 54f;
@@ -54,6 +61,12 @@ namespace Darclite.Player
         [SerializeField] private float ghostSpawnInterval = 0.04f;
         [SerializeField] private float ghostLifetime = 0.25f;
         [SerializeField] private Color ghostColor = new Color(0.6f, 0.85f, 1f, 0.35f);
+
+        // Attack's animator transition only originates from Locomotion (or Guard), so starting an
+        // attack from any other state (mid-jump, mid-dodge) leaves its trigger armed with nowhere
+        // to go until Locomotion is reached again — it then fires late, looking like a queued-up
+        // animation. Gate attacking on this instead of letting that queuing happen at all.
+        public bool CanAttack => _controller.isGrounded && !_isPreparingJump && !_isDodging;
 
         private CharacterController _controller;
         private UnityEngine.Camera _mainCamera;
@@ -76,12 +89,18 @@ namespace Darclite.Player
 
         private Combatant _combatant;
         private PlayerCombat _playerCombat;
+        private CharacterAudio _characterAudio;
+        private BlockDodge _blockDodge;
+        private float _footstepTimer;
+        private bool _wasGrounded = true;
 
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
             _combatant = GetComponent<Combatant>();
             _playerCombat = GetComponent<PlayerCombat>();
+            _characterAudio = GetComponent<CharacterAudio>();
+            _blockDodge = GetComponent<BlockDodge>();
 
             if (animator == null)
             {
@@ -105,9 +124,22 @@ namespace Darclite.Player
             bool isKnockedBack = _combatant != null && _combatant.IsBeingKnockedBack;
             bool isStunned = !isKnockedBack && _combatant != null && _combatant.IsStunned;
             bool isSelfAttacking = _playerCombat != null && _playerCombat.IsAttacking;
-            bool canInitiateJump = !isKnockedBack && !isStunned && !isSelfAttacking;
+            bool isGuarding = _blockDodge != null && _blockDodge.IsLockedInGuardAnimation;
+            // Matches PlayerCombat's attack gate — blocked for the whole time the chat panel is
+            // up, not just while actively typing, so jump/dodge can't fire while waiting on a
+            // response either. Same for the stat menu.
+            bool isChatOpen = NPCChatUI.Instance != null && NPCChatUI.Instance.IsOpen;
+            bool isStatMenuOpen = StatMenuUI.Instance != null && StatMenuUI.Instance.IsOpen;
+            bool canInitiateJump = !isKnockedBack && !isStunned && !isSelfAttacking && !isGuarding && !isChatOpen && !isStatMenuOpen;
 
             ApplyGravityAndJump(canInitiateJump);
+
+            bool isGroundedNow = _controller.isGrounded;
+            if (isGroundedNow && !_wasGrounded)
+            {
+                _characterAudio?.PlayJumpLand();
+            }
+            _wasGrounded = isGroundedNow;
 
             if (isKnockedBack)
             {
@@ -118,6 +150,21 @@ namespace Darclite.Player
 
             if (isSelfAttacking)
             {
+                _controller.Move(new Vector3(0f, _verticalVelocity.y, 0f) * Time.deltaTime);
+                UpdateAnimator(Vector2.zero, false);
+                return;
+            }
+
+            if (isGuarding)
+            {
+                // The Guard animation overrides everything else, so cut a dash short if one was
+                // interrupted rather than leaving it stuck mid-flight.
+                if (_isDodging)
+                {
+                    _isDodging = false;
+                    ResetSmear();
+                }
+
                 _controller.Move(new Vector3(0f, _verticalVelocity.y, 0f) * Time.deltaTime);
                 UpdateAnimator(Vector2.zero, false);
                 return;
@@ -137,6 +184,16 @@ namespace Darclite.Player
                 return;
             }
 
+            if (isStatMenuOpen)
+            {
+                // Unlike the chat panel (which still allows walking when not actively typing),
+                // the stat menu blurs the whole world and takes over the cursor — no reason to
+                // let the player walk around blind while it's up.
+                _controller.Move(new Vector3(0f, _verticalVelocity.y, 0f) * Time.deltaTime);
+                UpdateAnimator(Vector2.zero, false);
+                return;
+            }
+
             CheckDodgeInput();
 
             Vector2 moveInput = ReadMoveInput();
@@ -150,15 +207,44 @@ namespace Darclite.Player
             else
             {
                 Move(moveDirection, isSprinting);
+                UpdateFootsteps(moveInput.sqrMagnitude > 0.01f, isSprinting);
             }
 
             RotateTowardsCamera();
             UpdateAnimator(moveInput, isSprinting);
         }
 
+        private void UpdateFootsteps(bool isMoving, bool isSprinting)
+        {
+            if (!isMoving || !_controller.isGrounded)
+            {
+                _footstepTimer = 0f;
+                return;
+            }
+
+            _footstepTimer -= Time.deltaTime;
+            if (_footstepTimer <= 0f)
+            {
+                _footstepTimer = isSprinting ? runStepInterval : walkStepInterval;
+                _characterAudio?.PlayFootstep(isSprinting);
+            }
+        }
+
         private void CheckDodgeInput()
         {
             if (_isDodging || !_controller.isGrounded || _isPreparingJump)
+            {
+                return;
+            }
+
+            // Reads raw key-down events directly rather than going through ReadMoveInput, so it
+            // needs its own chat/stat-menu-open check — otherwise double-tapping W/A/S/D while
+            // typing a message (or just having a panel open) would still trigger a dodge.
+            if (NPCChatUI.Instance != null && NPCChatUI.Instance.IsOpen)
+            {
+                return;
+            }
+            if (StatMenuUI.Instance != null && StatMenuUI.Instance.IsOpen)
             {
                 return;
             }
@@ -194,6 +280,9 @@ namespace Darclite.Player
 
                 if (animator != null)
                 {
+                    // Clear any attack that got armed the instant before the dodge started —
+                    // otherwise it sits queued and fires late once back in Locomotion.
+                    animator.ResetTrigger(AttackParam);
                     animator.SetTrigger(triggerParam);
                 }
 
@@ -201,6 +290,8 @@ namespace Darclite.Player
                 {
                     _orbitCamera.Shake(cameraShakeDuration, cameraShakeMagnitude);
                 }
+
+                _characterAudio?.PlayDash();
 
                 lastTapTime = -999f;
             }
@@ -286,6 +377,19 @@ namespace Darclite.Player
 
         private Vector2 ReadMoveInput()
         {
+            // Typing a chat message should type letters, not walk the player around.
+            if (NPCChatUI.IsTypingInInput)
+            {
+                return Vector2.zero;
+            }
+
+            // Belt-and-suspenders against the stunned-crawl branch above still calling this if
+            // the menu gets opened mid-stun — the menu should always win.
+            if (StatMenuUI.Instance != null && StatMenuUI.Instance.IsOpen)
+            {
+                return Vector2.zero;
+            }
+
             Keyboard keyboard = Keyboard.current;
             if (keyboard == null)
             {
@@ -362,6 +466,7 @@ namespace Darclite.Player
                     {
                         _verticalVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
                         _isPreparingJump = false;
+                        _characterAudio?.PlayJumpTakeoff();
                     }
 
                     return;
@@ -379,6 +484,9 @@ namespace Darclite.Player
 
                     if (animator != null)
                     {
+                        // Clear any attack that got armed the instant before the jump started —
+                        // otherwise it sits queued and fires late once back in Locomotion.
+                        animator.ResetTrigger(AttackParam);
                         animator.SetTrigger(JumpParam);
                     }
                 }

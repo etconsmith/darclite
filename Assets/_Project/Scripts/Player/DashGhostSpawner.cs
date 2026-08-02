@@ -14,6 +14,11 @@ namespace Darclite.Player
 
             foreach (Renderer renderer in modelRoot.GetComponentsInChildren<Renderer>())
             {
+                if (renderer.GetComponent<ExcludeFromDashGhost>() != null)
+                {
+                    continue;
+                }
+
                 Mesh mesh = null;
                 Transform referenceTransform = renderer.transform;
                 Vector3 scale = referenceTransform.lossyScale;

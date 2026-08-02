@@ -29,8 +29,21 @@ namespace Darclite.Combat
 
         [Header("Knockback")]
         [SerializeField] private float knockbackDistance = 16f;
-        [SerializeField] private float knockbackDuration = 0.4f;
-        [SerializeField, Range(0.05f, 0.9f)] private float knockbackAccelerationFraction = 0.2f;
+        [SerializeField] private float knockbackDuration = 1.4f;
+        [SerializeField, Range(0.05f, 0.5f)] private float knockbackAccelerationFraction = 0.15f;
+        [SerializeField, Range(0.1f, 0.85f)] private float knockbackStopFraction = 0.65f;
+        [SerializeField] private float slideAudioDelay = 0.65f;
+        [SerializeField] private float knockbackAirHeight = 1.5f;
+        // Fraction of the slide (which is kept in lockstep with the Knockback clip's own real
+        // playback time via its animator state speed) at which the character's pose is meant to
+        // reach the ground. Reset to a neutral 0.5 pending fresh calibration against the new clip
+        // — the old value (and the correction curve below) were tuned to the previous animation.
+        [SerializeField] private float knockbackGroundedFraction = 0.5f;
+
+        // Cancels the clip's own pose wobble once grounded. Left empty (no correction) until
+        // recalibrated against the new Knockback clip.
+        [SerializeField]
+        private AnimationCurve knockbackGroundedCorrectionCurve = new AnimationCurve();
 
         [Header("Animation")]
         [SerializeField] private Animator animator;
@@ -39,8 +52,10 @@ namespace Darclite.Combat
         public int MaxHealth => maxHealth;
         public bool IsStunned { get; private set; }
         public bool IsBeingKnockedBack { get; private set; }
+        public bool IsDead { get; private set; }
 
         public event Action<int> HealthChanged;
+        public event Action OnDeath;
 
         private CharacterController _characterController;
         private NavMeshAgent _navMeshAgent;
@@ -48,6 +63,7 @@ namespace Darclite.Combat
         private MaterialPropertyBlock _propertyBlock;
         private Coroutine _flashCoroutine;
         private Coroutine _hitReactionCoroutine;
+        private CharacterAudio _characterAudio;
 
         private void Awake()
         {
@@ -62,10 +78,16 @@ namespace Darclite.Combat
             _navMeshAgent = GetComponent<NavMeshAgent>();
             _renderers = GetComponentsInChildren<Renderer>();
             _propertyBlock = new MaterialPropertyBlock();
+            _characterAudio = GetComponent<CharacterAudio>();
         }
 
         public void TakeHit(int hitIndex, int damage)
         {
+            if (IsDead)
+            {
+                return;
+            }
+
             // Already flying away from a knockback — don't let a stray hit interrupt the
             // slide (it would strand the NavMeshAgent/updatePosition state mid-flight).
             if (IsBeingKnockedBack)
@@ -85,6 +107,11 @@ namespace Darclite.Combat
 
         public void TakeKnockback(int damage, Vector3 attackerPosition)
         {
+            if (IsDead)
+            {
+                return;
+            }
+
             if (IsBeingKnockedBack)
             {
                 return;
@@ -96,6 +123,15 @@ namespace Darclite.Combat
             }
 
             _hitReactionCoroutine = StartCoroutine(ApplyKnockbackAfterDelay(damage, attackerPosition));
+            StartCoroutine(PlaySlideAudioAfterDelay());
+        }
+
+        private IEnumerator PlaySlideAudioAfterDelay()
+        {
+            // The knockback clip shows the character airborne before they actually touch down
+            // and slide, so the slide sound waits a beat rather than firing the instant they're hit.
+            yield return new WaitForSeconds(slideAudioDelay);
+            _characterAudio?.PlaySlide();
         }
 
         private IEnumerator ApplyHitAfterDelay(int hitIndex, int damage)
@@ -116,6 +152,12 @@ namespace Darclite.Combat
             yield return new WaitForSeconds(hitReactionDelay);
 
             ApplyDamage(damage);
+
+            // Lethal — let the death sequence take over instead of also playing a hit reaction.
+            if (IsDead)
+            {
+                yield break;
+            }
 
             if (animator != null)
             {
@@ -142,6 +184,12 @@ namespace Darclite.Combat
 
             ApplyDamage(damage);
 
+            // Lethal — let the death sequence take over instead of also playing knockback/sliding.
+            if (IsDead)
+            {
+                yield break;
+            }
+
             if (animator != null)
             {
                 animator.SetTrigger(KnockbackParam);
@@ -157,7 +205,10 @@ namespace Darclite.Combat
 
             yield return StartCoroutine(KnockbackSlide(direction));
 
-            yield return new WaitForSeconds(stunDuration);
+            // No extra stun wait here (unlike a plain hit) — by the time the slide coroutine
+            // finishes, the Knockback state has already played all the way through to standing
+            // back up (its speed is synced to knockbackDuration), so holding control any longer
+            // just reads as still being stunned after visibly being back on your feet.
             IsStunned = false;
             _hitReactionCoroutine = null;
         }
@@ -174,12 +225,22 @@ namespace Darclite.Combat
             }
 
             float timer = 0f;
+            float previousAirHeight = 0f;
+
             while (timer < knockbackDuration)
             {
-                timer += Time.deltaTime;
+                timer += Mathf.Min(Time.deltaTime, 1f / 30f);
                 float t = Mathf.Clamp01(timer / knockbackDuration);
                 float speedMultiplier = EvaluateKnockbackCurve(t);
                 Vector3 delta = direction * ((knockbackDistance / knockbackDuration) * speedMultiplier * Time.deltaTime);
+
+                // The Knockback animator state's speed is set (in AnimatorControllerBuilder) so the
+                // clip's full length exactly matches knockbackDuration — so t here IS the clip's own
+                // normalized time, letting this arc land exactly when the clip's pose actually
+                // reaches the ground instead of guessing a shape independent of the real animation.
+                float airHeight = EvaluateKnockbackAirArc(t);
+                delta.y = airHeight - previousAirHeight;
+                previousAirHeight = airHeight;
 
                 if (_characterController != null && _characterController.enabled)
                 {
@@ -211,12 +272,39 @@ namespace Darclite.Combat
                 return Mathf.SmoothStep(0f, 1f, rampT);
             }
 
-            float decayT = (t - knockbackAccelerationFraction) / (1f - knockbackAccelerationFraction);
-            return Mathf.SmoothStep(1f, 0f, decayT);
+            float stopStart = 1f - knockbackStopFraction;
+            if (t < stopStart)
+            {
+                // Cruise at full speed instead of decaying across the whole rest of the slide.
+                return 1f;
+            }
+
+            // Smooth, gradual ease into the stop (zero velocity change at both ends) across most
+            // of the slide, instead of cruising at full speed and cutting off sharply.
+            float stopT = (t - stopStart) / knockbackStopFraction;
+            return Mathf.SmoothStep(1f, 0f, stopT);
+        }
+
+        private float EvaluateKnockbackAirArc(float t)
+        {
+            if (t >= knockbackGroundedFraction)
+            {
+                // Cancels the clip's own pose wobble for the rest of the slide instead of
+                // guessing a flat offset — see knockbackGroundedCorrectionCurve.
+                return knockbackGroundedCorrectionCurve.Evaluate(t);
+            }
+
+            float riseT = t / knockbackGroundedFraction;
+            return Mathf.Sin(riseT * Mathf.PI) * knockbackAirHeight;
         }
 
         private void ApplyDamage(int damage)
         {
+            if (IsDead)
+            {
+                return;
+            }
+
             CurrentHealth = Mathf.Max(CurrentHealth - damage, 0);
             HealthChanged?.Invoke(CurrentHealth);
 
@@ -225,6 +313,12 @@ namespace Darclite.Combat
                 StopCoroutine(_flashCoroutine);
             }
             _flashCoroutine = StartCoroutine(FlashRedCoroutine());
+
+            if (CurrentHealth <= 0)
+            {
+                IsDead = true;
+                OnDeath?.Invoke();
+            }
         }
 
         private IEnumerator FlashRedCoroutine()

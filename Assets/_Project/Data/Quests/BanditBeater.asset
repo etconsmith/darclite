@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 449c0d229128a234a8cbc4eec32294b2, type: 3}
+  m_Name: BanditBeater
+  m_EditorClassIdentifier: Assembly-CSharp::Darclite.Dialogue.QuestDefinition
+  questId: bandit_beater
+  title: Bandit Beater
+  description: A band of bandits has been lurking around the village, causing trouble
+    for anyone who passes by. Elka wants them driven off for good.
+  objective: Defeat the 5 bandits near the village.
+  rewardDescription: "Elka's thanks \u2014 and her trust."
+  targetProgress: 5
+  progressLabel: bandits defeated
