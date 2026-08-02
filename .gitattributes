@@ -1,12 +1,16 @@
-# Normalize line endings for Unity's YAML-based text assets
+# Normalize line endings for genuinely-always-text source files
 *.cs text
 *.shader text
-*.unity text
-*.prefab text
-*.mat text
-*.anim text
-*.controller text
-*.asset text
+
+# Unity can save these as either YAML text or binary depending on serialization mode/history —
+# treating them as "text" let git's CRLF normalization corrupt any that were actually binary
+# (this is what broke SampleScene.unity for a fresh clone). -text preserves them byte-for-byte.
+*.unity -text
+*.prefab -text
+*.mat -text
+*.anim -text
+*.controller -text
+*.asset -text
 
 # Large binary assets go through Git LFS
 *.psd filter=lfs diff=lfs merge=lfs -text
