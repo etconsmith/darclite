@@ -2981,6 +2981,10 @@ namespace Darclite.EditorTools
             so.ApplyModifiedProperties();
         }
 
+        // Same layered bar look as the player's health bar (Border/Track/DamageTrail/HealthFill/
+        // ChunkDividers, built with the same procedural sprites), just world-space and scaled down
+        // to sit above the enemy's head instead of pinned to the screen. Starts hidden — EnemyHealthUI
+        // only reveals it while the player's Power Sense ability is active.
         private static void SetupEnemyHealthUI(GameObject enemy, Combatant combatant, Bounds modelBounds)
         {
             Transform existing = enemy.transform.Find("HealthCanvas");
@@ -3002,26 +3006,91 @@ namespace Darclite.EditorTools
             RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
             canvasRect.sizeDelta = new Vector2(200f, 60f);
 
-            GameObject textObject = new GameObject("HealthText", typeof(Text));
-            textObject.transform.SetParent(canvasObject.transform, false);
+            GameObject barObject = new GameObject("Healthbar", typeof(RectTransform));
+            barObject.transform.SetParent(canvasObject.transform, false);
 
-            Text text = textObject.GetComponent<Text>();
-            text.font = GetGameFont();
-            text.fontSize = 40;
-            text.color = Color.white;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.text = combatant.CurrentHealth.ToString();
+            RectTransform barRect = barObject.GetComponent<RectTransform>();
+            barRect.anchorMin = new Vector2(0.5f, 0.5f);
+            barRect.anchorMax = new Vector2(0.5f, 0.5f);
+            barRect.pivot = new Vector2(0.5f, 0.5f);
+            barRect.anchoredPosition = Vector2.zero;
+            barRect.sizeDelta = new Vector2(160f, 24f);
 
-            RectTransform textRect = textObject.GetComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
+            const float borderThickness = 2f;
+            const float fillInset = 5f;
+            Sprite shapeSprite = CreateRoundedRectSprite();
+            Sprite solidSprite = CreateSolidSprite();
+
+            GameObject borderObject = new GameObject("Border", typeof(Image));
+            borderObject.transform.SetParent(barObject.transform, false);
+            StretchRect(borderObject.GetComponent<RectTransform>());
+            Image borderImage = borderObject.GetComponent<Image>();
+            borderImage.sprite = shapeSprite;
+            borderImage.type = Image.Type.Sliced;
+            borderImage.color = new Color(0.06f, 0.06f, 0.07f);
+            borderImage.raycastTarget = false;
+
+            GameObject trackObject = new GameObject("Track", typeof(Image));
+            trackObject.transform.SetParent(barObject.transform, false);
+            InsetRect(trackObject.GetComponent<RectTransform>(), borderThickness);
+            Image trackImage = trackObject.GetComponent<Image>();
+            trackImage.sprite = shapeSprite;
+            trackImage.type = Image.Type.Sliced;
+            trackImage.color = new Color(0.15f, 0.05f, 0.05f);
+            trackImage.raycastTarget = false;
+
+            GameObject trailObject = new GameObject("DamageTrail", typeof(Image));
+            trailObject.transform.SetParent(barObject.transform, false);
+            InsetRect(trailObject.GetComponent<RectTransform>(), fillInset);
+            Image damageTrailImage = trailObject.GetComponent<Image>();
+            damageTrailImage.sprite = solidSprite;
+            damageTrailImage.type = Image.Type.Filled;
+            damageTrailImage.fillMethod = Image.FillMethod.Horizontal;
+            damageTrailImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+            damageTrailImage.fillAmount = 1f;
+            damageTrailImage.color = new Color(0.95f, 0.75f, 0.15f);
+            damageTrailImage.raycastTarget = false;
+
+            GameObject fillObject = new GameObject("HealthFill", typeof(Image));
+            fillObject.transform.SetParent(barObject.transform, false);
+            InsetRect(fillObject.GetComponent<RectTransform>(), fillInset);
+            Image healthFillImage = fillObject.GetComponent<Image>();
+            healthFillImage.sprite = solidSprite;
+            healthFillImage.type = Image.Type.Filled;
+            healthFillImage.fillMethod = Image.FillMethod.Horizontal;
+            healthFillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
+            healthFillImage.fillAmount = 1f;
+            healthFillImage.color = new Color(0.25f, 0.85f, 0.25f);
+            healthFillImage.raycastTarget = false;
+
+            GameObject dividersContainer = new GameObject("ChunkDividers", typeof(RectTransform));
+            dividersContainer.transform.SetParent(barObject.transform, false);
+            InsetRect(dividersContainer.GetComponent<RectTransform>(), fillInset);
+
+            for (int i = 1; i < HealthBarChunkCount; i++)
+            {
+                float x = i / (float)HealthBarChunkCount;
+                GameObject dividerObject = new GameObject($"Divider{i}", typeof(Image));
+                dividerObject.transform.SetParent(dividersContainer.transform, false);
+
+                RectTransform dividerRect = dividerObject.GetComponent<RectTransform>();
+                dividerRect.anchorMin = new Vector2(x, 0f);
+                dividerRect.anchorMax = new Vector2(x, 1f);
+                dividerRect.pivot = new Vector2(0.5f, 0.5f);
+                dividerRect.sizeDelta = new Vector2(1.5f, 0f);
+                dividerRect.anchoredPosition = Vector2.zero;
+
+                Image dividerImage = dividerObject.GetComponent<Image>();
+                dividerImage.color = new Color(0f, 0f, 0f, 0.3f);
+                dividerImage.raycastTarget = false;
+            }
 
             EnemyHealthUI healthUI = canvasObject.AddComponent<EnemyHealthUI>();
             SerializedObject so = new SerializedObject(healthUI);
             so.FindProperty("combatant").objectReferenceValue = combatant;
-            so.FindProperty("healthText").objectReferenceValue = text;
+            so.FindProperty("punchTarget").objectReferenceValue = barRect;
+            so.FindProperty("healthFillImage").objectReferenceValue = healthFillImage;
+            so.FindProperty("damageTrailImage").objectReferenceValue = damageTrailImage;
             so.ApplyModifiedProperties();
         }
 
