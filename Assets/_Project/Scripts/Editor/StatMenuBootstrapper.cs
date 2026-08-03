@@ -877,6 +877,17 @@ namespace Darclite.EditorTools
             }),
         };
 
+        // Branches off an existing chain without joining it — its prerequisite must already be
+        // unlocked, but unlocking the branch neither replaces the prerequisite nor is replaced by
+        // anything else in that chain (unlike LiteTrees' tiers, which always supersede the tier
+        // right before them). Lite Release branches off Lite Concentration I specifically, so it
+        // stays available whether or not the player has since upgraded to Lite Concentration II.
+        private static readonly (string treeTitle, string prerequisiteAbilityName, string abilityName, string iconFileName, string description, int cost)[] LiteTreeBranches =
+        {
+            ("Attack", "Lite Concentration", "Lite Release", "Lite Release",
+                "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
+        };
+
         private static (GameObject content, Text availablePointsText) BuildLitePageContent(Transform parent)
         {
             GameObject content = new GameObject("LitePageContent", typeof(RectTransform));
@@ -897,6 +908,7 @@ namespace Darclite.EditorTools
                 var tree = LiteTrees[i];
                 float x = startX + i * columnSpacing;
                 BuildTreeChain(content.transform, tree.treeTitle, tree.tiers, x, baseNodeY, lockedBackground, infoPanel);
+                BuildTreeBranches(content.transform, tree, x, baseNodeY, lockedBackground, infoPanel);
             }
 
             Text availablePointsText = BuildLiteAvailablePointsReadout(content.transform);
@@ -982,9 +994,18 @@ namespace Darclite.EditorTools
         }
 
         // Plain vertical white bar — tiers in the same chain always sit directly above one
-        // another (same x), so no rotation math is needed to connect them. Forced to the first
-        // sibling slot so it renders behind every node regardless of build order.
+        // another (same x), so this is just the generic two-point connector below with both
+        // points sharing an x.
         private static void BuildTreeConnectorLine(Transform parent, float x, float fromY, float toY)
+        {
+            BuildTreeConnectorLineBetween(parent, new Vector2(x, fromY), new Vector2(x, toY));
+        }
+
+        // Generic connector between two arbitrary points — used for the vertical tier-chain bars
+        // above and for diagonal branch connectors (BuildTreeBranches), which hang a node off to
+        // the side of its prerequisite instead of stacking directly above it. Forced to the first
+        // sibling slot so it renders behind every node regardless of build order.
+        private static void BuildTreeConnectorLineBetween(Transform parent, Vector2 from, Vector2 to)
         {
             GameObject lineObject = new GameObject("Connector", typeof(Image));
             lineObject.transform.SetParent(parent, false);
@@ -992,14 +1013,43 @@ namespace Darclite.EditorTools
             lineRect.anchorMin = new Vector2(0.5f, 0.5f);
             lineRect.anchorMax = new Vector2(0.5f, 0.5f);
             lineRect.pivot = new Vector2(0.5f, 0.5f);
-            lineRect.anchoredPosition = new Vector2(x, (fromY + toY) * 0.5f);
-            lineRect.sizeDelta = new Vector2(4f, Mathf.Abs(toY - fromY));
+            lineRect.anchoredPosition = (from + to) * 0.5f;
+            lineRect.sizeDelta = new Vector2(4f, Vector2.Distance(from, to));
+
+            Vector2 diff = to - from;
+            lineRect.localRotation = Quaternion.Euler(0f, 0f, -Mathf.Atan2(diff.x, diff.y) * Mathf.Rad2Deg);
 
             Image lineImage = lineObject.GetComponent<Image>();
             lineImage.color = new Color(1f, 1f, 1f, 0.6f);
             lineImage.raycastTarget = false;
 
             lineObject.transform.SetAsFirstSibling();
+        }
+
+        private const float BranchXOffset = 160f;
+        private const float BranchYOffset = 90f;
+
+        // Draws any branch nodes hanging off this tree's chain — same clickable node as a normal
+        // tier, just positioned diagonally off its prerequisite instead of stacking above it,
+        // since unlocking it doesn't continue (or get superseded by) that chain.
+        private static void BuildTreeBranches(Transform parent, (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers) tree, float x, float baseY, Sprite lockedBackground, AbilityInfoPanelUI infoPanel)
+        {
+            foreach (var branch in LiteTreeBranches)
+            {
+                if (branch.treeTitle != tree.treeTitle)
+                {
+                    continue;
+                }
+
+                int prerequisiteTierIndex = Mathf.Max(0, System.Array.FindIndex(tree.tiers, t => t.abilityName == branch.prerequisiteAbilityName));
+                float prerequisiteY = baseY + prerequisiteTierIndex * TreeTierSpacing;
+                float branchX = x + BranchXOffset;
+                float branchY = prerequisiteY + BranchYOffset;
+
+                BuildTreeConnectorLineBetween(parent, new Vector2(x, prerequisiteY), new Vector2(branchX, branchY));
+                BuildTreeNode(parent, tree.treeTitle, (branch.abilityName, branch.iconFileName, branch.description, branch.cost),
+                    branch.prerequisiteAbilityName, branchX, branchY, lockedBackground, infoPanel, showTitle: false);
+            }
         }
 
         private static void BuildTreeNode(Transform parent, string treeTitle, (string abilityName, string iconFileName, string description, int cost) tier, string prerequisiteAbilityName, float x, float y, Sprite lockedBackground, AbilityInfoPanelUI infoPanel, bool showTitle)
@@ -1576,6 +1626,13 @@ namespace Darclite.EditorTools
             foreach (var tree in trees)
             {
                 totalIcons += tree.tiers.Length;
+                foreach (var branch in LiteTreeBranches)
+                {
+                    if (branch.treeTitle == tree.treeTitle)
+                    {
+                        totalIcons++;
+                    }
+                }
             }
 
             const float iconSize = 48f;
@@ -1620,6 +1677,30 @@ namespace Darclite.EditorTools
                     }
 
                     previousGate = gate;
+                    iconPosition++;
+                }
+
+                foreach (var branch in LiteTreeBranches)
+                {
+                    if (branch.treeTitle != tree.treeTitle)
+                    {
+                        continue;
+                    }
+
+                    float iconX = startX + iconPosition * (iconSize + iconGap) + iconSize / 2f;
+                    AbilityIconUI branchIcon = BuildAbilityIcon(boxObject.transform,
+                        (tree.treeTitle, branch.abilityName, branch.iconFileName, branch.description, branch.cost),
+                        iconX, iconY, iconSize, slotBackground);
+
+                    GameObject branchGateObject = branchIcon.NodeRoot.gameObject;
+                    branchGateObject.AddComponent<CanvasGroup>();
+                    AbilityTierGateUI branchGate = branchGateObject.AddComponent<AbilityTierGateUI>();
+                    SerializedObject branchGateSo = new SerializedObject(branchGate);
+                    branchGateSo.FindProperty("icon").objectReferenceValue = branchIcon;
+                    // No previousTier/supersededByAbilityName — a branch stands alone, it doesn't
+                    // replace its prerequisite and nothing replaces it.
+                    branchGateSo.ApplyModifiedProperties();
+
                     iconPosition++;
                 }
             }

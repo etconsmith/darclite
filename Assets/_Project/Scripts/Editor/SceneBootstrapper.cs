@@ -172,6 +172,54 @@ namespace Darclite.EditorTools
         internal const string WarriorModelPath = "Assets/_Project/Art/Characters/RPGCharacterPack/Models/Warrior.fbx";
         internal const string PlayerControllerPath = "Assets/_Project/Animations/PlayerAnimatorController.controller";
 
+        // Darclite/Create Player Animator Controller deletes and recreates the controller asset at
+        // PlayerControllerPath every time it runs — even though the path stays the same, it's a
+        // brand-new asset identity, so every Animator already in the scene/prefabs that was
+        // pointing at the old one goes back to "not playing an AnimatorController" until it's
+        // reassigned. Rather than remembering to re-run Setup Player/Enemy/Quest NPC Character and
+        // Build Bandit Prefab every single time (each of which also redoes a bunch of unrelated
+        // setup work), this just reattaches the current controller wherever it's gone missing.
+        [MenuItem("Darclite/Reassign Animator Controllers")]
+        public static void ReassignAnimatorControllers()
+        {
+            RuntimeAnimatorController controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(PlayerControllerPath);
+            if (controller == null)
+            {
+                Debug.LogError($"No Animator Controller found at {PlayerControllerPath} — run 'Create Player Animator Controller' first.");
+                return;
+            }
+
+            int fixedCount = 0;
+            foreach (string rootName in new[] { "Player", "Enemy", "QuestNPC" })
+            {
+                GameObject root = GameObject.Find(rootName);
+                Animator animator = root != null ? root.GetComponentInChildren<Animator>() : null;
+                if (animator == null)
+                {
+                    continue;
+                }
+
+                if (animator.runtimeAnimatorController == null)
+                {
+                    animator.runtimeAnimatorController = controller;
+                    EditorUtility.SetDirty(animator);
+                    fixedCount++;
+                }
+            }
+
+            GameObject banditPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BanditPrefabPath);
+            Animator banditAnimator = banditPrefab != null ? banditPrefab.GetComponentInChildren<Animator>() : null;
+            if (banditAnimator != null && banditAnimator.runtimeAnimatorController == null)
+            {
+                banditAnimator.runtimeAnimatorController = controller;
+                EditorUtility.SetDirty(banditPrefab);
+                fixedCount++;
+            }
+
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[SceneBootstrapper] Reassigned the Animator Controller on {fixedCount} character(s)/prefab(s) that had lost it.");
+        }
+
         [MenuItem("Darclite/Setup Player Character")]
         public static void SetupPlayerCharacter()
         {
@@ -259,6 +307,7 @@ namespace Darclite.EditorTools
             SetupLiteConcentrationAura(player, animator);
             SetupLiteRecoveryAbility(player, animator, combatant);
             SetupLiteBracingAbility(player);
+            SetupLiteReleaseAbility(player, animator);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -309,6 +358,27 @@ namespace Darclite.EditorTools
             bloom.intensity.value = 0.25f;
             bloom.scatter.overrideState = true;
             bloom.scatter.value = 0.4f;
+
+            if (!profile.TryGet(out DepthOfField depthOfField))
+            {
+                depthOfField = profile.Add<DepthOfField>(true);
+                AssetDatabase.AddObjectToAsset(depthOfField, profile);
+            }
+
+            // Starts fully off — LiteReleaseAbility (and anything else that wants an impact blur)
+            // drives gaussianMaxRadius up and back down for a brief pulse, only flipping `active`
+            // on while a pulse is actually running so it costs nothing the rest of the time. Kept
+            // on this always-on shared volume (not StatMenuBlurVolume) so a gameplay impact pulse
+            // can never race the Stat Menu's own open/close blur toggle.
+            depthOfField.active = false;
+            depthOfField.mode.overrideState = true;
+            depthOfField.mode.value = DepthOfFieldMode.Gaussian;
+            depthOfField.gaussianStart.overrideState = true;
+            depthOfField.gaussianStart.value = 0.1f;
+            depthOfField.gaussianEnd.overrideState = true;
+            depthOfField.gaussianEnd.value = 3f;
+            depthOfField.gaussianMaxRadius.overrideState = true;
+            depthOfField.gaussianMaxRadius.value = 0f;
 
             EditorUtility.SetDirty(profile);
             AssetDatabase.SaveAssets();
@@ -630,6 +700,95 @@ namespace Darclite.EditorTools
             SerializedObject abilitySo = new SerializedObject(abilityController);
             abilitySo.FindProperty("auraVfx").objectReferenceValue = auraVfx;
             abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Release Ability ====================
+
+        private const string LiteReleaseVfxAssetPath = "Assets/_Project/VFX/Lite Release.vfx";
+        private const string LiteAnimationsFolder = "Assets/_Project/Animations/Lite Animations";
+        private const string LiteAudioFolder = "Assets/_Project/Audio/LiteAudio";
+
+        // Parented directly to the player root at local zero, same as Lite Bracing's aura — this
+        // is a burst centered on the player, not a per-bone effect, so it just needs to ride along
+        // with them rather than track any specific bone.
+        private static void SetupLiteReleaseAbility(GameObject player, Animator animator)
+        {
+            // Force a fresh import so CharacterModelPostprocessor's Lite Animations handling
+            // actually applies even if this clip was already imported once before that folder was
+            // recognized (e.g. it was added to the project before this postprocessor branch was).
+            AssetDatabase.ImportAsset($"{LiteAnimationsFolder}/Lite Release.fbx", ImportAssetOptions.ForceUpdate);
+
+            VisualEffectAsset releaseVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteReleaseVfxAssetPath);
+            if (releaseVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Release VFX asset at {LiteReleaseVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "LiteReleaseVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("LiteReleaseVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+
+            VisualEffect releaseVfx = null;
+            if (releaseVfxAsset != null)
+            {
+                releaseVfx = vfxObject.GetComponent<VisualEffect>();
+                releaseVfx.visualEffectAsset = releaseVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "LiteReleaseAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("LiteReleaseAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip backgroundClip = LoadAudioClip(LiteAudioFolder, "Lite Release Background");
+            AudioClip explosionClip = LoadAudioClip(LiteAudioFolder, "Lite Release Explosion");
+
+            float castDuration = GetLiteAnimationClipLength("Lite Release");
+
+            Volume gameplayVolume = null;
+            GameObject gameplayVolumeObject = GameObject.Find("GameplayPostProcessingVolume");
+            if (gameplayVolumeObject != null)
+            {
+                gameplayVolume = gameplayVolumeObject.GetComponent<Volume>();
+            }
+
+            LiteReleaseAbility abilityController = player.GetComponent<LiteReleaseAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteReleaseAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("animator").objectReferenceValue = animator;
+            abilitySo.FindProperty("releaseVfx").objectReferenceValue = releaseVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("backgroundClip").objectReferenceValue = backgroundClip;
+            abilitySo.FindProperty("explosionClip").objectReferenceValue = explosionClip;
+            abilitySo.FindProperty("gameplayVolume").objectReferenceValue = gameplayVolume;
+            if (castDuration > 0f)
+            {
+                abilitySo.FindProperty("castDuration").floatValue = castDuration;
+            }
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        private static float GetLiteAnimationClipLength(string clipName)
+        {
+            string path = $"{LiteAnimationsFolder}/{clipName}.fbx";
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(path))
+            {
+                if (asset is AnimationClip clip && !clip.name.Contains("__preview__"))
+                {
+                    return clip.length;
+                }
+            }
+
+            Debug.LogWarning($"[SceneBootstrapper] Could not find Lite animation clip at {path}");
+            return 0f;
         }
 
         // Ambient drifting motes — the original diffuse cloud, now warm-tinted and slightly

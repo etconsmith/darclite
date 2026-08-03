@@ -9,6 +9,7 @@ namespace Darclite.EditorTools
         private const string ControllerPath = "Assets/_Project/Animations/PlayerAnimatorController.controller";
         private const string ClipsFolder = "Assets/_Project/Animations/Mixamo";
         private const string FightClipsFolder = "Assets/_Project/Animations/FightAnimations";
+        private const string LiteClipsFolder = "Assets/_Project/Animations/Lite Animations";
 
         // Also used by SceneBootstrapper to scale the attack-cooldown/stun durations it derives
         // from raw clip lengths, so gameplay pacing matches the sped-up animator playback.
@@ -51,6 +52,7 @@ namespace Darclite.EditorTools
             controller.AddParameter("GuardIndex", AnimatorControllerParameterType.Float);
             controller.AddParameter("Death", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("DeathIndex", AnimatorControllerParameterType.Float);
+            controller.AddParameter("LiteRelease", AnimatorControllerParameterType.Trigger);
 
             AnimationClip idle = LoadClip("Idle");
             AnimationClip walk = LoadClip("Walk");
@@ -89,6 +91,7 @@ namespace Darclite.EditorTools
             AnimationClip death1 = LoadClip(FightClipsFolder, "Death");
             AnimationClip death2 = LoadClip(FightClipsFolder, "Death2");
             AnimationClip death3 = LoadClip(FightClipsFolder, "Death3");
+            AnimationClip liteRelease = LoadClip(LiteClipsFolder, "Lite Release");
 
             AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
@@ -282,6 +285,24 @@ namespace Darclite.EditorTools
             toDeath.duration = 0.1f;
             toDeath.canTransitionToSelf = false;
             toDeath.AddCondition(AnimatorConditionMode.If, 0, "Death");
+
+            AnimatorState liteReleaseState = stateMachine.AddState("Lite Release");
+            liteReleaseState.motion = liteRelease;
+
+            AnimatorStateTransition toLiteRelease = stateMachine.AddAnyStateTransition(liteReleaseState);
+            toLiteRelease.hasExitTime = false;
+            toLiteRelease.duration = 0.05f;
+            toLiteRelease.canTransitionToSelf = false;
+            toLiteRelease.AddCondition(AnimatorConditionMode.If, 0, "LiteRelease");
+
+            // Uses AnyState (like Hit/Knockback/Guard) rather than only transitioning out of
+            // Locomotion — LiteReleaseAbility can be triggered from the hotbar regardless of what
+            // the player is currently doing, and a real Hit/Knockback still preempts this state
+            // the instant it fires since those also use AnyState transitions of their own.
+            AnimatorStateTransition liteReleaseToLocomotion = liteReleaseState.AddTransition(locomotionState);
+            liteReleaseToLocomotion.hasExitTime = true;
+            liteReleaseToLocomotion.exitTime = 0.92f;
+            liteReleaseToLocomotion.duration = 0.1f;
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();

@@ -10,6 +10,7 @@ namespace Darclite.EditorTools
         private const string CharactersFolder = "Assets/_Project/Art/Characters";
         private const string MixamoAnimationsFolder = "Assets/_Project/Animations/Mixamo";
         private const string FightAnimationsFolder = "Assets/_Project/Animations/FightAnimations";
+        private const string LiteAnimationsFolder = "Assets/_Project/Animations/Lite Animations";
 
         private static readonly (string boneName, string humanName)[] BoneMap =
         {
@@ -55,6 +56,11 @@ namespace Darclite.EditorTools
             return assetPath.Replace('\\', '/').StartsWith(FightAnimationsFolder);
         }
 
+        private bool IsLiteAnimationAsset()
+        {
+            return assetPath.Replace('\\', '/').StartsWith(LiteAnimationsFolder);
+        }
+
         private void OnPreprocessModel()
         {
             ModelImporter importer = (ModelImporter)assetImporter;
@@ -69,7 +75,7 @@ namespace Darclite.EditorTools
                 return;
             }
 
-            if (IsMixamoAnimationAsset() || IsFightAnimationAsset())
+            if (IsMixamoAnimationAsset() || IsFightAnimationAsset() || IsLiteAnimationAsset())
             {
                 importer.animationType = ModelImporterAnimationType.Human;
                 importer.importAnimation = true;

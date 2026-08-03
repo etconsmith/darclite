@@ -22,6 +22,7 @@ namespace Darclite.Core
         private static readonly (string abilityName, float cooldownSeconds)[] AbilityCooldownOverrides =
         {
             ("Lite Bracing", 25f),
+            ("Lite Release", 30f),
         };
 
         private const float DeniedFlashPeakAlpha = 0.55f;
