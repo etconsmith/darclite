@@ -13,7 +13,7 @@ namespace Darclite.EditorTools
 
         private static readonly (string boneName, string humanName)[] BoneMap =
         {
-            ("Body", "Hips"),
+            ("Hips", "Hips"),
             ("Abdomen", "Spine"),
             ("Torso", "Chest"),
             ("Neck", "Neck"),
@@ -36,7 +36,8 @@ namespace Darclite.EditorTools
 
         private bool IsCharacterAsset()
         {
-            return assetPath.Replace('\\', '/').StartsWith(CharactersFolder);
+            string path = assetPath.Replace('\\', '/');
+            return path.StartsWith(CharactersFolder) && path.Contains("/Models/");
         }
 
         private bool IsMixamoAnimationAsset()
