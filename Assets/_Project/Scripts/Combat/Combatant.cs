@@ -143,6 +143,17 @@ namespace Darclite.Combat
             StartCoroutine(PlaySlideAudioAfterDelay());
         }
 
+        public void Heal(int amount)
+        {
+            if (IsDead)
+            {
+                return;
+            }
+
+            CurrentHealth = Mathf.Min(CurrentHealth + amount, maxHealth);
+            HealthChanged?.Invoke(CurrentHealth);
+        }
+
         private IEnumerator PlaySlideAudioAfterDelay()
         {
             // The knockback clip shows the character airborne before they actually touch down

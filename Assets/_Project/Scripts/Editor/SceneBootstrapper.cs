@@ -257,6 +257,7 @@ namespace Darclite.EditorTools
 
             SetupGameplayPostProcessing();
             SetupLiteConcentrationAura(player, animator);
+            SetupLiteRecoveryAbility(player, animator, combatant);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -511,6 +512,53 @@ namespace Darclite.EditorTools
             auraSo.FindProperty("loopAudioSource").objectReferenceValue = loopAudioSource;
             auraSo.FindProperty("loopClip").objectReferenceValue = loopClip;
             auraSo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Recovery Ability ====================
+
+        private const string LiteRecoveryVfxAssetPath = "Assets/_Project/VFX/Lite Healing.vfx";
+
+        private static void SetupLiteRecoveryAbility(GameObject player, Animator animator, Combatant combatant)
+        {
+            Transform existing = FindDescendant(player.transform, "LiteRecoveryVFX");
+            if (existing != null)
+            {
+                Object.DestroyImmediate(existing.gameObject);
+            }
+
+            if (animator == null)
+            {
+                Debug.LogWarning("[SceneBootstrapper] No Animator on player model; skipping Lite Recovery ability setup.");
+                return;
+            }
+
+            Transform chest = animator.GetBoneTransform(HumanBodyBones.Chest);
+            if (chest == null)
+            {
+                Debug.LogWarning("[SceneBootstrapper] Could not resolve chest bone on player model; skipping Lite Recovery ability setup.");
+                return;
+            }
+
+            VisualEffectAsset liteRecoveryVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteRecoveryVfxAssetPath);
+            if (liteRecoveryVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Recovery VFX asset at {LiteRecoveryVfxAssetPath}");
+            }
+
+            VisualEffect healVfx = liteRecoveryVfxAsset != null
+                ? BuildHandVfx("LiteRecoveryVFX", chest, liteRecoveryVfxAsset)
+                : null;
+
+            LiteRecoveryAbility abilityController = player.GetComponent<LiteRecoveryAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteRecoveryAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("combatant").objectReferenceValue = combatant;
+            abilitySo.FindProperty("healVfx").objectReferenceValue = healVfx;
+            abilitySo.ApplyModifiedProperties();
         }
 
         // Ambient drifting motes — the original diffuse cloud, now warm-tinted and slightly
