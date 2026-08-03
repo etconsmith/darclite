@@ -364,7 +364,10 @@ namespace Darclite.Combat
             }
 
             HumanBodyBones bone = hitIndex >= 2 ? HumanBodyBones.Head : HumanBodyBones.Chest;
-            Transform boneTransform = animator != null ? animator.GetBoneTransform(bone) : null;
+            // GetBoneTransform throws (rather than returning null) if the Animator's Avatar isn't
+            // humanoid — guard on isHuman so a misconfigured/non-humanoid rig degrades to spawning
+            // the effect at the character's root instead of crashing the whole hit reaction.
+            Transform boneTransform = (animator != null && animator.isHuman) ? animator.GetBoneTransform(bone) : null;
             effect.transform.position = boneTransform != null ? boneTransform.position : transform.position;
             effect.Play();
 

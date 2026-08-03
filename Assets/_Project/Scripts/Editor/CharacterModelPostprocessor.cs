@@ -13,7 +13,12 @@ namespace Darclite.EditorTools
 
         private static readonly (string boneName, string humanName)[] BoneMap =
         {
-            ("Hips", "Hips"),
+            // "Body" is the real pelvis/common ancestor of both the spine and the legs across
+            // every model in this pack (Warrior/Monk/Rogue/Cleric/Ranger/Wizard) — the bone
+            // literally named "Hips" is actually just the first spine segment and sits as a
+            // *sibling* of UpperLeg.L/R, not their ancestor. Mapping human Hips to the literal
+            // "Hips" bone fails Unity's Avatar requirement that Hips be an ancestor of UpperLeg.
+            ("Body", "Hips"),
             ("Abdomen", "Spine"),
             ("Torso", "Chest"),
             ("Neck", "Neck"),
