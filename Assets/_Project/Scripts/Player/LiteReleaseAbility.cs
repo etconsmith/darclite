@@ -245,7 +245,7 @@ namespace Darclite.Player
 
         private void DealExplosionDamage(Vector3 origin)
         {
-            Combatant[] combatants = FindObjectsByType<Combatant>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            Combatant[] combatants = FindObjectsByType<Combatant>(FindObjectsInactive.Exclude);
             foreach (Combatant target in combatants)
             {
                 if (target == null || target == _combatant || target.IsDead)

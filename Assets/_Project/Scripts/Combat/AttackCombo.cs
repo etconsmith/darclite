@@ -176,6 +176,25 @@ namespace Darclite.Combat
             animator.SetTrigger(AttackParam);
         }
 
+        // Forceful Strike's impact point — was landing at the target's root (ground level, since
+        // that's where their transform sits), which put the VFX at their feet. This finds their
+        // chest bone instead and pushes it a bit toward the attacker, roughly where a fist would
+        // actually be making contact, so the target's own body doesn't render in front of it.
+        private const float ForcefulStrikeImpactForwardOffset = 0.3f;
+
+        private static Vector3 GetForcefulStrikeImpactPosition(Transform target, Vector3 attackerPosition)
+        {
+            Animator targetAnimator = target.GetComponentInChildren<Animator>();
+            Transform chestBone = (targetAnimator != null && targetAnimator.isHuman) ? targetAnimator.GetBoneTransform(HumanBodyBones.Chest) : null;
+            Vector3 basePosition = chestBone != null ? chestBone.position : target.position;
+
+            Vector3 towardAttacker = attackerPosition - target.position;
+            towardAttacker.y = 0f;
+            towardAttacker = towardAttacker.sqrMagnitude > 0.0001f ? towardAttacker.normalized : target.forward;
+
+            return basePosition + towardAttacker * ForcefulStrikeImpactForwardOffset;
+        }
+
         private bool TryHitTarget(Vector3 selfPosition, Transform target, int hitIndex, int damage, bool isHeavy)
         {
             if (target == null)
@@ -240,7 +259,7 @@ namespace Darclite.Combat
             // above and never consumes the charge.
             if (forcefulStrikeActive)
             {
-                _forcefulStrikeAbility.ConsumeOnHit(target.position);
+                _forcefulStrikeAbility.ConsumeOnHit(GetForcefulStrikeImpactPosition(target, selfPosition));
             }
 
             return true;
