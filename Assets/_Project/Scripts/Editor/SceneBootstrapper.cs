@@ -258,6 +258,7 @@ namespace Darclite.EditorTools
             SetupGameplayPostProcessing();
             SetupLiteConcentrationAura(player, animator);
             SetupLiteRecoveryAbility(player, animator, combatant);
+            SetupLiteBracingAbility(player);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -558,6 +559,61 @@ namespace Darclite.EditorTools
             SerializedObject abilitySo = new SerializedObject(abilityController);
             abilitySo.FindProperty("combatant").objectReferenceValue = combatant;
             abilitySo.FindProperty("healVfx").objectReferenceValue = healVfx;
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Bracing Ability ====================
+
+        private const string LiteAuraVfxAssetPath = "Assets/_Project/VFX/Lite Aura.vfx";
+
+        // Cleans up the old per-arm motes/wisps objects from the previous version of this ability,
+        // in favor of a single hand-authored VFX Graph effect at the player's feet.
+        private static readonly string[] LiteBracingCleanupObjectNames =
+        {
+            "LiteBracingMotes_LeftArm", "LiteBracingMotes_RightArm",
+            "LiteBracingWisps_LeftArm", "LiteBracingWisps_RightArm",
+        };
+
+        // Parented directly to the player root (not a bone) at local zero — since the player's
+        // root transform sits at ground level, this puts the effect at their feet and keeps it
+        // riding along with them automatically as they move, without any per-frame position code.
+        private static void SetupLiteBracingAbility(GameObject player)
+        {
+            foreach (string name in LiteBracingCleanupObjectNames)
+            {
+                Transform existing = FindDescendant(player.transform, name);
+                if (existing != null)
+                {
+                    Object.DestroyImmediate(existing.gameObject);
+                }
+            }
+
+            VisualEffectAsset liteAuraAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteAuraVfxAssetPath);
+            if (liteAuraAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Aura VFX asset at {LiteAuraVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "LiteBracingVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("LiteBracingVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+
+            VisualEffect auraVfx = null;
+            if (liteAuraAsset != null)
+            {
+                auraVfx = vfxObject.GetComponent<VisualEffect>();
+                auraVfx.visualEffectAsset = liteAuraAsset;
+            }
+
+            LiteBracingAbility abilityController = player.GetComponent<LiteBracingAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteBracingAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("auraVfx").objectReferenceValue = auraVfx;
             abilitySo.ApplyModifiedProperties();
         }
 

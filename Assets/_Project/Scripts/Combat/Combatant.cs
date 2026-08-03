@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Darclite.Player;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.VFX;
@@ -69,6 +70,7 @@ namespace Darclite.Combat
         private Coroutine _flashCoroutine;
         private Coroutine _hitReactionCoroutine;
         private CharacterAudio _characterAudio;
+        private LiteBracingAbility _liteBracingAbility;
 
         private void Awake()
         {
@@ -84,6 +86,8 @@ namespace Darclite.Combat
             _renderers = GetComponentsInChildren<Renderer>();
             _propertyBlock = new MaterialPropertyBlock();
             _characterAudio = GetComponent<CharacterAudio>();
+            // Null for anyone who can't use the ability (enemies) — guarded at every use below.
+            _liteBracingAbility = GetComponent<LiteBracingAbility>();
 
             // VisualEffect assets default to auto-firing their "OnPlay" event once as soon as
             // they're enabled — stop them immediately so they only ever play from PlayHitEffect on
@@ -331,6 +335,11 @@ namespace Darclite.Combat
             if (IsDead)
             {
                 return;
+            }
+
+            if (_liteBracingAbility != null && _liteBracingAbility.IsActive)
+            {
+                damage = Mathf.RoundToInt(damage * (1f - LiteBracingAbility.DamageReductionFraction));
             }
 
             CurrentHealth = Mathf.Max(CurrentHealth - damage, 0);
