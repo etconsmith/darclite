@@ -13,9 +13,17 @@ namespace Darclite.Core
     [AddComponentMenu("Darclite/Ability Hotbar HUD UI")]
     public class AbilityHotbarHudUI : MonoBehaviour
     {
-        // Every ability shares this for now — there's no per-ability data yet. Lite Concentration
-        // is meant to use exactly this value once real ability definitions exist to read it from.
+        // Falls back to this for any ability not listed in AbilityCooldownOverrides below — most
+        // abilities still share it since there's no full per-ability data model yet.
         private const float DefaultCooldownSeconds = 40f;
+
+        // Named exceptions to DefaultCooldownSeconds. Add an entry here for any ability whose
+        // cooldown needs to differ from the shared default.
+        private static readonly (string abilityName, float cooldownSeconds)[] AbilityCooldownOverrides =
+        {
+            ("Lite Bracing", 25f),
+        };
+
         private const float DeniedFlashPeakAlpha = 0.55f;
         private const float DeniedFlashDuration = 0.18f;
         private const float DeniedPunchScale = 1.25f;
@@ -121,8 +129,22 @@ namespace Darclite.Core
                 return;
             }
 
-            StartCooldown(index, DefaultCooldownSeconds);
+            StartCooldown(index, GetCooldownForSlot(index));
             AbilityLoadout.NotifyActivated(index);
+        }
+
+        private static float GetCooldownForSlot(int index)
+        {
+            string abilityName = AbilityLoadout.GetAbilityName(index);
+            foreach ((string name, float cooldownSeconds) in AbilityCooldownOverrides)
+            {
+                if (name == abilityName)
+                {
+                    return cooldownSeconds;
+                }
+            }
+
+            return DefaultCooldownSeconds;
         }
 
         private void StartCooldown(int index, float duration)
