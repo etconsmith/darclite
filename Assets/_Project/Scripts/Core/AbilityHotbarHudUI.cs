@@ -15,7 +15,7 @@ namespace Darclite.Core
     {
         // Every ability shares this for now — there's no per-ability data yet. Lite Concentration
         // is meant to use exactly this value once real ability definitions exist to read it from.
-        private const float DefaultCooldownSeconds = 20f;
+        private const float DefaultCooldownSeconds = 40f;
         private const float DeniedFlashPeakAlpha = 0.55f;
         private const float DeniedFlashDuration = 0.18f;
         private const float DeniedPunchScale = 1.25f;

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.VFX;
 
 namespace Darclite.Combat
 {
@@ -48,6 +49,10 @@ namespace Darclite.Combat
         [Header("Animation")]
         [SerializeField] private Animator animator;
 
+        [Header("VFX")]
+        [SerializeField] private VisualEffect hitEffect;
+        [SerializeField] private VisualEffect liteHitEffect;
+
         public int CurrentHealth { get; private set; }
         public int MaxHealth => maxHealth;
         public bool IsStunned { get; private set; }
@@ -79,9 +84,21 @@ namespace Darclite.Combat
             _renderers = GetComponentsInChildren<Renderer>();
             _propertyBlock = new MaterialPropertyBlock();
             _characterAudio = GetComponent<CharacterAudio>();
+
+            // VisualEffect assets default to auto-firing their "OnPlay" event once as soon as
+            // they're enabled — stop them immediately so they only ever play from PlayHitEffect on
+            // an actual landed hit, not once for free every time the scene loads.
+            if (hitEffect != null)
+            {
+                hitEffect.Stop();
+            }
+            if (liteHitEffect != null)
+            {
+                liteHitEffect.Stop();
+            }
         }
 
-        public void TakeHit(int hitIndex, int damage)
+        public void TakeHit(int hitIndex, int damage, bool useLiteHit = false)
         {
             if (IsDead)
             {
@@ -102,10 +119,10 @@ namespace Darclite.Combat
                 StopCoroutine(_hitReactionCoroutine);
             }
 
-            _hitReactionCoroutine = StartCoroutine(ApplyHitAfterDelay(hitIndex, damage));
+            _hitReactionCoroutine = StartCoroutine(ApplyHitAfterDelay(hitIndex, damage, useLiteHit));
         }
 
-        public void TakeKnockback(int damage, Vector3 attackerPosition)
+        public void TakeKnockback(int damage, Vector3 attackerPosition, bool useLiteHit = false)
         {
             if (IsDead)
             {
@@ -122,7 +139,7 @@ namespace Darclite.Combat
                 StopCoroutine(_hitReactionCoroutine);
             }
 
-            _hitReactionCoroutine = StartCoroutine(ApplyKnockbackAfterDelay(damage, attackerPosition));
+            _hitReactionCoroutine = StartCoroutine(ApplyKnockbackAfterDelay(damage, attackerPosition, useLiteHit));
             StartCoroutine(PlaySlideAudioAfterDelay());
         }
 
@@ -134,7 +151,7 @@ namespace Darclite.Combat
             _characterAudio?.PlaySlide();
         }
 
-        private IEnumerator ApplyHitAfterDelay(int hitIndex, int damage)
+        private IEnumerator ApplyHitAfterDelay(int hitIndex, int damage, bool useLiteHit)
         {
             // Lock out actions the instant a hit registers, not once the delay finishes — otherwise
             // both fighters could land a "trade" during the attacker's wind-up.
@@ -151,7 +168,7 @@ namespace Darclite.Combat
 
             yield return new WaitForSeconds(hitReactionDelay);
 
-            ApplyDamage(damage);
+            ApplyDamage(damage, hitIndex, useLiteHit);
 
             // Lethal — let the death sequence take over instead of also playing a hit reaction.
             if (IsDead)
@@ -170,7 +187,7 @@ namespace Darclite.Combat
             _hitReactionCoroutine = null;
         }
 
-        private IEnumerator ApplyKnockbackAfterDelay(int damage, Vector3 attackerPosition)
+        private IEnumerator ApplyKnockbackAfterDelay(int damage, Vector3 attackerPosition, bool useLiteHit)
         {
             IsStunned = true;
 
@@ -182,7 +199,7 @@ namespace Darclite.Combat
 
             yield return new WaitForSeconds(hitReactionDelay);
 
-            ApplyDamage(damage);
+            ApplyDamage(damage, useLiteHit: useLiteHit);
 
             // Lethal — let the death sequence take over instead of also playing knockback/sliding.
             if (IsDead)
@@ -298,7 +315,7 @@ namespace Darclite.Combat
             return Mathf.Sin(riseT * Mathf.PI) * knockbackAirHeight;
         }
 
-        private void ApplyDamage(int damage)
+        private void ApplyDamage(int damage, int hitIndex = -1, bool useLiteHit = false)
         {
             if (IsDead)
             {
@@ -307,6 +324,8 @@ namespace Darclite.Combat
 
             CurrentHealth = Mathf.Max(CurrentHealth - damage, 0);
             HealthChanged?.Invoke(CurrentHealth);
+
+            PlayHitEffect(hitIndex, useLiteHit);
 
             if (_flashCoroutine != null)
             {
@@ -319,6 +338,52 @@ namespace Darclite.Combat
                 IsDead = true;
                 OnDeath?.Invoke();
             }
+        }
+
+        // Long enough for a normal one-shot burst to fully finish spawning, but short enough to cut
+        // off a graph that (misconfigured) keeps re-triggering itself on its own timer — guards
+        // against the effect looping indefinitely off a single Play() call regardless of what's
+        // actually inside the graph's Spawn context.
+        private const float HitEffectAutoStopDelay = 0.5f;
+
+        private Coroutine _hitEffectStopRoutine;
+        private VisualEffect _activeHitEffect;
+
+        // hitIndex follows AttackCombo's convention (0=BodyHitLeft, 1=BodyHitRight, 2=HeadHitLeft,
+        // 3=HeadHitRight); -1 (heavy attacks, which don't track a directional hitIndex) falls back
+        // to the chest. Positioned fresh off the real bone each time rather than parented once, so
+        // it always reads as landing at the actual point of contact instead of a fixed spot.
+        // useLiteHit swaps in the bigger Lite Hit variant when the attacker had Lite Concentration
+        // active the instant their punch landed (see AttackCombo.TryHitTarget).
+        private void PlayHitEffect(int hitIndex, bool useLiteHit)
+        {
+            VisualEffect effect = useLiteHit && liteHitEffect != null ? liteHitEffect : hitEffect;
+            if (effect == null)
+            {
+                return;
+            }
+
+            HumanBodyBones bone = hitIndex >= 2 ? HumanBodyBones.Head : HumanBodyBones.Chest;
+            Transform boneTransform = animator != null ? animator.GetBoneTransform(bone) : null;
+            effect.transform.position = boneTransform != null ? boneTransform.position : transform.position;
+            effect.Play();
+
+            _activeHitEffect = effect;
+            if (_hitEffectStopRoutine != null)
+            {
+                StopCoroutine(_hitEffectStopRoutine);
+            }
+            _hitEffectStopRoutine = StartCoroutine(StopHitEffectAfterDelay());
+        }
+
+        private IEnumerator StopHitEffectAfterDelay()
+        {
+            yield return new WaitForSeconds(HitEffectAutoStopDelay);
+            if (_activeHitEffect != null)
+            {
+                _activeHitEffect.Stop();
+            }
+            _hitEffectStopRoutine = null;
         }
 
         private IEnumerator FlashRedCoroutine()

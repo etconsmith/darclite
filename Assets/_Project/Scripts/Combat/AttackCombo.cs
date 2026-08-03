@@ -1,4 +1,5 @@
 using System.Collections;
+using Darclite.Player;
 using UnityEngine;
 
 namespace Darclite.Combat
@@ -56,6 +57,7 @@ namespace Darclite.Combat
         private float _lastLandedTime = -999f;
         private Combatant _combatant;
         private CharacterAudio _characterAudio;
+        private LiteConcentrationAura _liteConcentrationAura;
 
         private void Awake()
         {
@@ -66,6 +68,8 @@ namespace Darclite.Combat
 
             _combatant = GetComponent<Combatant>();
             _characterAudio = GetComponent<CharacterAudio>();
+            // Null for anyone who can't use the ability (enemies) — guarded at every use below.
+            _liteConcentrationAura = GetComponent<LiteConcentrationAura>();
         }
 
         private void Update()
@@ -200,14 +204,15 @@ namespace Darclite.Combat
 
             bool isBlockBroken = targetGuard != null && targetGuard.CurrentGuardState == GuardState.Vulnerable;
             int finalDamage = isBlockBroken ? damage * 2 : damage;
+            bool useLiteHit = _liteConcentrationAura != null && _liteConcentrationAura.IsActive;
 
             if (isHeavy || isBlockBroken)
             {
-                targetCombatant.TakeKnockback(finalDamage, selfPosition);
+                targetCombatant.TakeKnockback(finalDamage, selfPosition, useLiteHit);
             }
             else
             {
-                targetCombatant.TakeHit(hitIndex, damage);
+                targetCombatant.TakeHit(hitIndex, damage, useLiteHit);
             }
 
             if (isBlockBroken)

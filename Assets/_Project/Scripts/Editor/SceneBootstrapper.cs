@@ -16,6 +16,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.VFX;
 
 namespace Darclite.EditorTools
 {
@@ -229,6 +230,7 @@ namespace Darclite.EditorTools
                 combatant = player.AddComponent<Combatant>();
             }
             ApplyCombatantTiming(combatant, PlayerMaxHealth);
+            SetupHitEffect(player, combatant);
 
             PlayerCombat playerCombat = player.GetComponent<PlayerCombat>();
             if (playerCombat == null)
@@ -317,6 +319,57 @@ namespace Darclite.EditorTools
             StatMenuBootstrapper.EnsureCameraSupportsPostProcessing();
         }
 
+        // ==================== Hit Effect ====================
+
+        private const string HitEffectAssetPath = "Assets/_Project/VFX/Hit Effect.vfx";
+        private const string LiteHitEffectAssetPath = "Assets/_Project/VFX/Lite Hit.vfx";
+
+        // Shared by player, enemy, and quest NPC setup — any Combatant that can take a hit gets
+        // both of these, positioned fresh at the Chest or Head bone (based on hitIndex) each time
+        // Combatant.TakeHit/TakeKnockback lands, so it reads as coming from the actual point of
+        // contact rather than a fixed spot on the body. Combatant resolves the bone itself off its
+        // own existing animator reference, so nothing extra needs wiring here. Which one actually
+        // plays (normal vs. the bigger Lite Hit) is decided at runtime in AttackCombo/Combatant
+        // based on whether the attacker had Lite Concentration active.
+        //
+        // Note: scaling these objects' transforms does NOT change the rendered particle size for
+        // either graph (confirmed by testing) — both graphs must be sized by hand inside the graph
+        // itself (Initialize Particle's Set Size block), not from here.
+        private static void SetupHitEffect(GameObject character, Combatant combatant)
+        {
+            if (combatant == null)
+            {
+                return;
+            }
+
+            VisualEffect hitEffect = BuildHitVfxChild(character, "HitEffect", HitEffectAssetPath);
+            VisualEffect liteHitEffect = BuildHitVfxChild(character, "LiteHitEffect", LiteHitEffectAssetPath);
+
+            SerializedObject so = new SerializedObject(combatant);
+            so.FindProperty("hitEffect").objectReferenceValue = hitEffect;
+            so.FindProperty("liteHitEffect").objectReferenceValue = liteHitEffect;
+            so.ApplyModifiedProperties();
+        }
+
+        private static VisualEffect BuildHitVfxChild(GameObject character, string name, string assetPath)
+        {
+            VisualEffectAsset asset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(assetPath);
+            if (asset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find VFX asset at {assetPath}");
+                return null;
+            }
+
+            Transform existing = FindDescendant(character.transform, name);
+            GameObject vfxObject = existing != null ? existing.gameObject : new GameObject(name, typeof(VisualEffect));
+            vfxObject.transform.SetParent(character.transform, false);
+
+            VisualEffect visualEffect = vfxObject.GetComponent<VisualEffect>();
+            visualEffect.visualEffectAsset = asset;
+
+            return visualEffect;
+        }
+
         // ==================== Lite Concentration Aura ====================
 
         private const string AbilityAuraShaderName = "Darclite/AdditiveGlowParticle";
@@ -324,7 +377,6 @@ namespace Darclite.EditorTools
         private const string AbilityAuraGlowSpritePath = "Assets/_Project/Art/UI/SoftWhiteGlow.png";
         private const string AbilityAuraRingSpritePath = "Assets/_Project/Art/UI/SoftGlowRing.png";
         private const string AbilityAuraMoteMaterialPath = "Assets/_Project/Materials/AbilityAuraMote.mat";
-        private const string AbilityAuraRingMaterialPath = "Assets/_Project/Materials/AbilityAuraRing.mat";
         private const string AbilityAuraRingBurstMaterialPath = "Assets/_Project/Materials/AbilityAuraRingBurst.mat";
         private const string AbilityAuraRimMaterialPath = "Assets/_Project/Materials/AbilityAuraRimGlow.mat";
 
@@ -340,11 +392,17 @@ namespace Darclite.EditorTools
             "LiteConcentrationMotes_LeftArm", "LiteConcentrationMotes_RightArm",
             "LiteConcentrationWisps_LeftArm", "LiteConcentrationWisps_RightArm",
             "LiteConcentrationShell_LeftArm", "LiteConcentrationShell_RightArm",
+            // Kept so a rebuild cleans up the now-removed persistent palm ring if it's still
+            // present in the scene from before.
             "LiteConcentrationRing_LeftHand", "LiteConcentrationRing_RightHand",
             "LiteConcentrationFlash_LeftHand", "LiteConcentrationFlash_RightHand",
             "LiteConcentrationRingBurst_LeftHand", "LiteConcentrationRingBurst_RightHand",
             "LiteConcentrationLight_LeftArm", "LiteConcentrationLight_RightArm",
+            "LiteConcentrationAudioSource",
+            "LiteConcentrationVFX_LeftHand", "LiteConcentrationVFX_RightHand",
         };
+
+        private const string LiteConcentrationVfxAssetPath = "Assets/_Project/VFX/Lite Concentration.vfx";
 
         // Positions everything at the actual midpoint (or exact position) between/at real bone
         // transforms rather than a guessed local axis/offset, and uses shapes (Sphere, camera-
@@ -386,11 +444,10 @@ namespace Darclite.EditorTools
             }
 
             Material moteMaterial = CreateOrLoadAuraMaterial(AbilityAuraShaderName, softGlowSprite.texture, AbilityAuraMoteMaterialPath);
-            Material ringMaterial = CreateOrLoadAuraMaterial(AbilityAuraShaderName, ringSprite.texture, AbilityAuraRingMaterialPath);
             Material ringBurstMaterial = CreateOrLoadAuraMaterial(AbilityAuraShaderName, ringSprite.texture, AbilityAuraRingBurstMaterialPath);
             Material rimGlowMaterial = CreateOrLoadRimGlowMaterial();
 
-            if (moteMaterial == null || ringMaterial == null || ringBurstMaterial == null || rimGlowMaterial == null)
+            if (moteMaterial == null || ringBurstMaterial == null || rimGlowMaterial == null)
             {
                 return;
             }
@@ -400,6 +457,13 @@ namespace Darclite.EditorTools
             ParticleSystem[] flashes = new ParticleSystem[2];
             ParticleSystem[] ringBursts = new ParticleSystem[2];
             Light[] lights = new Light[2];
+            VisualEffect[] handVfx = new VisualEffect[2];
+
+            VisualEffectAsset liteConcentrationVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteConcentrationVfxAssetPath);
+            if (liteConcentrationVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Concentration VFX asset at {LiteConcentrationVfxAssetPath}");
+            }
 
             for (int i = 0; i < 2; i++)
             {
@@ -409,11 +473,18 @@ namespace Darclite.EditorTools
                 motes[i] = BuildArmAuraParticles($"LiteConcentrationMotes_{armSideNames[i]}", lowerArm, hand, moteMaterial);
                 wisps[i] = BuildArmWispParticles($"LiteConcentrationWisps_{armSideNames[i]}", lowerArm, hand, moteMaterial);
                 BuildArmGlowShell($"LiteConcentrationShell_{armSideNames[i]}", lowerArm, hand, rimGlowMaterial);
-                BuildPalmRing($"LiteConcentrationRing_{handSideNames[i]}", player.transform, hand, ringMaterial);
                 flashes[i] = BuildCastFlash($"LiteConcentrationFlash_{handSideNames[i]}", hand, moteMaterial);
                 ringBursts[i] = BuildCastRingBurst($"LiteConcentrationRingBurst_{handSideNames[i]}", hand, ringBurstMaterial);
                 lights[i] = BuildArmAuraLight($"LiteConcentrationLight_{armSideNames[i]}", lowerArm, hand);
+
+                if (liteConcentrationVfxAsset != null)
+                {
+                    handVfx[i] = BuildHandVfx($"LiteConcentrationVFX_{handSideNames[i]}", hand, liteConcentrationVfxAsset);
+                }
             }
+
+            AudioSource loopAudioSource = BuildLoopAudioSource("LiteConcentrationAudioSource", player.transform);
+            AudioClip loopClip = LoadAudioClip(FightAudioFolder, "liteconcentration");
 
             Volume gameplayVolume = null;
             GameObject volumeObject = GameObject.Find("GameplayPostProcessingVolume");
@@ -434,9 +505,11 @@ namespace Darclite.EditorTools
             AssignObjectArray(auraSo, "castFlashParticles", flashes);
             AssignObjectArray(auraSo, "castRingBurstParticles", ringBursts);
             AssignObjectArray(auraSo, "armLights", lights);
+            AssignObjectArray(auraSo, "handVfx", handVfx);
             auraSo.FindProperty("rimGlowMaterial").objectReferenceValue = rimGlowMaterial;
-            auraSo.FindProperty("ringMaterial").objectReferenceValue = ringMaterial;
             auraSo.FindProperty("gameplayVolume").objectReferenceValue = gameplayVolume;
+            auraSo.FindProperty("loopAudioSource").objectReferenceValue = loopAudioSource;
+            auraSo.FindProperty("loopClip").objectReferenceValue = loopClip;
             auraSo.ApplyModifiedProperties();
         }
 
@@ -615,43 +688,43 @@ namespace Darclite.EditorTools
             shellObject.AddComponent<ExcludeFromDashGhost>();
         }
 
-        // A single long-lived billboard particle at the palm, spun continuously via Rotation Over
-        // Lifetime — visibility is entirely driven by the shared ringMaterial's alpha (set by
-        // LiteConcentrationAura), so it can just always be "on" here and never needs its own
-        // Play()/Stop() calls at runtime.
-        // Parented to the player root rather than the hand bone — captures the hand's position
-        // once (at build time) as a fixed offset, so it hovers near where the palm generally is
-        // without rigidly tracking every swing of a punch or attack animation.
-        private static void BuildPalmRing(string name, Transform playerRoot, Transform hand, Material material)
+        // Graph's particle sizes/velocities are authored at a scale meant for a much bigger space
+        // than "sitting on a hand" — shrinking the transform is the simplest way to bring the whole
+        // effect down to hand-sized without editing the graph itself.
+        private const float HandVfxScale = 0.06f;
+
+        // Parented directly to the hand bone (rather than the player root, like the old removed
+        // palm ring) — this is a hand-authored VFX Graph effect rather than a rigid fixed shape, so
+        // it reads fine tracking the arm's swing the same way the motes/wisps already do. Stopped
+        // immediately since it should only play while the ability is actually active.
+        private static VisualEffect BuildHandVfx(string name, Transform hand, VisualEffectAsset asset)
         {
-            GameObject psObject = new GameObject(name, typeof(ParticleSystem));
-            psObject.transform.SetParent(playerRoot, false);
-            psObject.transform.position = hand.position;
+            GameObject vfxObject = new GameObject(name, typeof(VisualEffect));
+            vfxObject.transform.SetParent(hand, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+            vfxObject.transform.localScale = Vector3.one * HandVfxScale;
 
-            ParticleSystem system = psObject.GetComponent<ParticleSystem>();
-            ParticleSystem.MainModule main = system.main;
-            main.loop = true;
-            main.playOnAwake = true;
-            main.simulationSpace = ParticleSystemSimulationSpace.Local;
-            main.startLifetime = 999f;
-            main.startSpeed = 0f;
-            main.startSize = 0.16f;
-            main.startColor = AbilityAuraWarmWhite;
-            main.maxParticles = 1;
+            VisualEffect visualEffect = vfxObject.GetComponent<VisualEffect>();
+            visualEffect.visualEffectAsset = asset;
+            visualEffect.Stop();
 
-            ParticleSystem.EmissionModule emission = system.emission;
-            emission.enabled = true;
-            emission.rateOverTime = 0f;
-            emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 1) });
+            return visualEffect;
+        }
 
-            ParticleSystem.RotationOverLifetimeModule rotationOverLifetime = system.rotationOverLifetime;
-            rotationOverLifetime.enabled = true;
-            // Rotation modules take radians/sec via script despite the Inspector showing degrees.
-            rotationOverLifetime.z = new ParticleSystem.MinMaxCurve(90f * Mathf.Deg2Rad);
+        // Dedicated AudioSource (separate from CharacterAudio's one-shot combat SFX source) so
+        // LiteConcentrationAura can freely drive its volume for the loop's fade-out without
+        // affecting punch/footstep sounds playing on the same character.
+        private static AudioSource BuildLoopAudioSource(string name, Transform parent)
+        {
+            GameObject audioObject = new GameObject(name, typeof(AudioSource));
+            audioObject.transform.SetParent(parent, false);
 
-            ParticleSystemRenderer renderer = system.GetComponent<ParticleSystemRenderer>();
-            renderer.renderMode = ParticleSystemRenderMode.Billboard;
-            renderer.material = material;
+            AudioSource source = audioObject.GetComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = true;
+            source.spatialBlend = 1f;
+
+            return source;
         }
 
         // One-shot bright pop at the palm the instant the ability is cast — gives casting a felt
@@ -2394,6 +2467,7 @@ namespace Darclite.EditorTools
                 combatant = enemy.AddComponent<Combatant>();
             }
             ApplyCombatantTiming(combatant);
+            SetupHitEffect(enemy, combatant);
 
             PopulateAttackDurations(enemy.GetComponent<AttackCombo>());
             SetupEnemyHealthUI(enemy, combatant, bounds);
@@ -2737,6 +2811,7 @@ namespace Darclite.EditorTools
                 combatant = npc.AddComponent<Combatant>();
             }
             ApplyCombatantTiming(combatant, QuestNPCMaxHealth);
+            SetupHitEffect(npc, combatant);
 
             CharacterAudio npcAudio = npc.GetComponent<CharacterAudio>();
             if (npcAudio == null)
