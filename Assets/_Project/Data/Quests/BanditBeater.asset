@@ -20,3 +20,4 @@ MonoBehaviour:
   rewardDescription: "Elka's thanks \u2014 and her trust."
   targetProgress: 5
   progressLabel: bandits defeated
+  questGiverName: Elka
