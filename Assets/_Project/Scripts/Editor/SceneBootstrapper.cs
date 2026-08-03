@@ -404,7 +404,11 @@ namespace Darclite.EditorTools
             "LiteConcentrationVFX_LeftHand", "LiteConcentrationVFX_RightHand",
         };
 
-        private const string LiteConcentrationVfxAssetPath = "Assets/_Project/VFX/Lite Concentration.vfx";
+        // Lite Concentration (tier 1) and Lite Concentration II (tier 2) hand VFX — the single
+        // LiteConcentrationAura component swaps between these at runtime based on which tier
+        // actually activates, since only one can ever be equipped at a time.
+        private const string LiteConcentrationTierOneVfxAssetPath = "Assets/_Project/VFX/Lite Concentration.vfx";
+        private const string LiteConcentrationTierTwoVfxAssetPath = "Assets/_Project/VFX/Lite Concentration 2.vfx";
 
         // Positions everything at the actual midpoint (or exact position) between/at real bone
         // transforms rather than a guessed local axis/offset, and uses shapes (Sphere, camera-
@@ -461,10 +465,16 @@ namespace Darclite.EditorTools
             Light[] lights = new Light[2];
             VisualEffect[] handVfx = new VisualEffect[2];
 
-            VisualEffectAsset liteConcentrationVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteConcentrationVfxAssetPath);
-            if (liteConcentrationVfxAsset == null)
+            VisualEffectAsset tierOneVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteConcentrationTierOneVfxAssetPath);
+            if (tierOneVfxAsset == null)
             {
-                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Concentration VFX asset at {LiteConcentrationVfxAssetPath}");
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Concentration VFX asset at {LiteConcentrationTierOneVfxAssetPath}");
+            }
+
+            VisualEffectAsset tierTwoVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteConcentrationTierTwoVfxAssetPath);
+            if (tierTwoVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Concentration II VFX asset at {LiteConcentrationTierTwoVfxAssetPath}");
             }
 
             for (int i = 0; i < 2; i++)
@@ -479,9 +489,12 @@ namespace Darclite.EditorTools
                 ringBursts[i] = BuildCastRingBurst($"LiteConcentrationRingBurst_{handSideNames[i]}", hand, ringBurstMaterial);
                 lights[i] = BuildArmAuraLight($"LiteConcentrationLight_{armSideNames[i]}", lowerArm, hand);
 
-                if (liteConcentrationVfxAsset != null)
+                // Built with tier 1's asset as a sane default — LiteConcentrationAura swaps this
+                // to whichever tier actually activates before every cast.
+                VisualEffectAsset defaultAsset = tierOneVfxAsset != null ? tierOneVfxAsset : tierTwoVfxAsset;
+                if (defaultAsset != null)
                 {
-                    handVfx[i] = BuildHandVfx($"LiteConcentrationVFX_{handSideNames[i]}", hand, liteConcentrationVfxAsset);
+                    handVfx[i] = BuildHandVfx($"LiteConcentrationVFX_{handSideNames[i]}", hand, defaultAsset);
                 }
             }
 
@@ -508,6 +521,8 @@ namespace Darclite.EditorTools
             AssignObjectArray(auraSo, "castRingBurstParticles", ringBursts);
             AssignObjectArray(auraSo, "armLights", lights);
             AssignObjectArray(auraSo, "handVfx", handVfx);
+            auraSo.FindProperty("tierOneHandVfxAsset").objectReferenceValue = tierOneVfxAsset;
+            auraSo.FindProperty("tierTwoHandVfxAsset").objectReferenceValue = tierTwoVfxAsset;
             auraSo.FindProperty("rimGlowMaterial").objectReferenceValue = rimGlowMaterial;
             auraSo.FindProperty("gameplayVolume").objectReferenceValue = gameplayVolume;
             auraSo.FindProperty("loopAudioSource").objectReferenceValue = loopAudioSource;

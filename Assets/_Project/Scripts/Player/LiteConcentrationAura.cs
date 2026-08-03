@@ -15,15 +15,27 @@ namespace Darclite.Player
     // share one scripted "punch in, settle, hold, fade out" envelope so they read as one cohesive
     // pulse of light rather than separate timers; the loop audio starts at full volume immediately
     // (no fade-in) and only fades out at the very end.
+    //
+    // One component handles BOTH Lite Concentration and its upgrade, Lite Concentration II, rather
+    // than duplicating this whole apparatus — since the Lite skill tree's tier-replace behavior
+    // guarantees only one of the two is ever equipped at a time, whichever one actually activates
+    // just selects a slightly stronger hand VFX/rim glow/damage multiplier for that cast.
     [AddComponentMenu("Darclite/Lite Concentration Aura")]
     public class LiteConcentrationAura : MonoBehaviour
     {
-        private const string AbilityName = "Lite Concentration";
+        private const string TierOneAbilityName = "Lite Concentration";
+        private const string TierTwoAbilityName = "Lite Concentration II";
         private const float ActiveDuration = 20f;
 
         private const float LightPeakIntensity = 0.7f;
-        private const float RimPeakIntensity = 2.2f;
+        private const float RimPeakIntensityTierOne = 2.2f;
+        private const float RimPeakIntensityTierTwo = 2.6f;
         private const float BloomBoost = 0.25f;
+
+        // Read by AttackCombo — 20%/30% bonus damage while active, matching whichever tier is
+        // actually equipped.
+        public const float DamageMultiplierTierOne = 1.2f;
+        public const float DamageMultiplierTierTwo = 1.3f;
 
         private const float PunchInDuration = 0.12f;
         private const float SettleDuration = 0.18f;
@@ -36,6 +48,8 @@ namespace Darclite.Player
         [SerializeField] private ParticleSystem[] castRingBurstParticles = new ParticleSystem[2];
         [SerializeField] private Light[] armLights = new Light[2];
         [SerializeField] private VisualEffect[] handVfx = new VisualEffect[2];
+        [SerializeField] private VisualEffectAsset tierOneHandVfxAsset;
+        [SerializeField] private VisualEffectAsset tierTwoHandVfxAsset;
         [SerializeField] private Material rimGlowMaterial;
         [SerializeField] private Volume gameplayVolume;
         [SerializeField] private AudioSource loopAudioSource;
@@ -45,6 +59,11 @@ namespace Darclite.Player
         // instead of the normal one.
         public bool IsActive { get; private set; }
 
+        // Which tier actually activated most recently — drives DamageMultiplier and the visual
+        // tuning below for the duration of that cast.
+        public float DamageMultiplier { get; private set; } = DamageMultiplierTierOne;
+
+        private bool _isTierTwo;
         private Coroutine _activeRoutine;
         private Coroutine _audioFadeRoutine;
         private Bloom _bloom;
@@ -83,13 +102,25 @@ namespace Darclite.Player
 
         private void HandleActivated(int slotIndex)
         {
-            if (AbilityLoadout.GetAbilityName(slotIndex) != AbilityName)
+            string activatedAbilityName = AbilityLoadout.GetAbilityName(slotIndex);
+            bool isTierOne = activatedAbilityName == TierOneAbilityName;
+            bool isTierTwo = activatedAbilityName == TierTwoAbilityName;
+            if (!isTierOne && !isTierTwo)
             {
                 return;
             }
 
+            _isTierTwo = isTierTwo;
+            DamageMultiplier = isTierTwo ? DamageMultiplierTierTwo : DamageMultiplierTierOne;
+
+            VisualEffectAsset handVfxAsset = isTierTwo ? tierTwoHandVfxAsset : tierOneHandVfxAsset;
             for (int i = 0; i < 2; i++)
             {
+                if (handVfx[i] != null && handVfxAsset != null)
+                {
+                    handVfx[i].visualEffectAsset = handVfxAsset;
+                }
+
                 RestartOneShot(castFlashParticles[i]);
                 RestartOneShot(castRingBurstParticles[i]);
             }
@@ -255,7 +286,8 @@ namespace Darclite.Player
 
             if (rimGlowMaterial != null)
             {
-                rimGlowMaterial.SetFloat("_Intensity", RimPeakIntensity * value);
+                float rimPeak = _isTierTwo ? RimPeakIntensityTierTwo : RimPeakIntensityTierOne;
+                rimGlowMaterial.SetFloat("_Intensity", rimPeak * value);
             }
 
             if (_bloom != null)

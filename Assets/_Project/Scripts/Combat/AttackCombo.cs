@@ -30,8 +30,6 @@ namespace Darclite.Combat
         [SerializeField] private int heavyDamage = 25;
         [SerializeField] private float comboResetTime = 2f;
 
-        private const float LiteConcentrationDamageMultiplier = 1.2f;
-
         [SerializeField] private float[] lightAttackDurations = new float[8];
         [SerializeField] private float[] heavyAttackDurations = new float[2];
 
@@ -206,7 +204,10 @@ namespace Darclite.Combat
 
             bool isBlockBroken = targetGuard != null && targetGuard.CurrentGuardState == GuardState.Vulnerable;
             bool useLiteHit = _liteConcentrationAura != null && _liteConcentrationAura.IsActive;
-            int boostedDamage = useLiteHit ? Mathf.RoundToInt(damage * LiteConcentrationDamageMultiplier) : damage;
+            // Reads whichever tier (I or II) is actually equipped/active — 20% vs 30% — rather
+            // than a fixed constant, since only one tier can ever be active at a time.
+            float liteMultiplier = useLiteHit ? _liteConcentrationAura.DamageMultiplier : 1f;
+            int boostedDamage = useLiteHit ? Mathf.RoundToInt(damage * liteMultiplier) : damage;
             int finalDamage = isBlockBroken ? boostedDamage * 2 : boostedDamage;
 
             if (isHeavy || isBlockBroken)

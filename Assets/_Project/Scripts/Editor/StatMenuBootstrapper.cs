@@ -846,16 +846,35 @@ namespace Darclite.EditorTools
 
         // ==================== Lite Page ====================
 
-        private static readonly (string treeTitle, string abilityName, string iconFileName, string description, int cost)[] LiteTrees =
+        // Each tree is a chain of tiers rather than one flat ability — a later tier's prerequisite
+        // is always the tier immediately before it in the same array, and unlocking it fully
+        // replaces that earlier tier everywhere (Lite page node, Abilities page icon, hotbar)
+        // rather than sitting alongside it. All costs are 0 for now — no points-spending economy
+        // exists yet, so unlocking only checks the prerequisite chain.
+        private static readonly (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers)[] LiteTrees =
         {
-            ("Attack", "Lite Concentration", "Lite Concentration",
-                "Focus your Lite into every strike, increasing the power of your attacks.", 1),
-            ("Sense", "Power Sense 1", "Power Sense 1",
-                "Sense the vitality of nearby enemies, revealing their health above their heads.", 1),
-            ("Defense", "Lite Bracing", "Lite Bracing",
-                "Brace yourself with Lite, reducing incoming damage.", 1),
-            ("Restoration", "Recovery Lite", "Recovery",
-                "Channel Lite passively to recover health more quickly over time.", 1),
+            ("Attack", new[]
+            {
+                ("Lite Concentration", "Lite Concentration",
+                    "Focus your Lite into every strike, increasing the power of your attacks.", 0),
+                ("Lite Concentration II", "Lite Concentration",
+                    "Focus your Lite into every strike, increasing the power of your attacks even further.", 0),
+            }),
+            ("Sense", new[]
+            {
+                ("Power Sense 1", "Power Sense 1",
+                    "Sense the vitality of nearby enemies, revealing their health above their heads.", 0),
+            }),
+            ("Defense", new[]
+            {
+                ("Lite Bracing", "Lite Bracing",
+                    "Brace yourself with Lite, reducing incoming damage.", 0),
+            }),
+            ("Restoration", new[]
+            {
+                ("Recovery Lite", "Recovery",
+                    "Channel Lite passively to recover health more quickly over time.", 0),
+            }),
         };
 
         private static (GameObject content, Text availablePointsText) BuildLitePageContent(Transform parent)
@@ -877,7 +896,7 @@ namespace Darclite.EditorTools
             {
                 var tree = LiteTrees[i];
                 float x = startX + i * columnSpacing;
-                BuildTreeBaseNode(content.transform, tree, x, baseNodeY, lockedBackground, infoPanel);
+                BuildTreeChain(content.transform, tree.treeTitle, tree.tiers, x, baseNodeY, lockedBackground, infoPanel);
             }
 
             Text availablePointsText = BuildLiteAvailablePointsReadout(content.transform);
@@ -939,17 +958,61 @@ namespace Darclite.EditorTools
             return numberText;
         }
 
-        private static void BuildTreeBaseNode(Transform parent, (string treeTitle, string abilityName, string iconFileName, string description, int cost) tree, float x, float y, Sprite lockedBackground, AbilityInfoPanelUI infoPanel)
+        private const float TreeTierSpacing = 190f;
+
+        // Builds every tier of one tree stacked vertically, wiring each tier's prerequisite to
+        // the ability name of the tier directly below it, and drawing a connecting line between
+        // each consecutive pair. Only the base (first) tier gets the tree's title label — later
+        // tiers stack under the same title rather than repeating it.
+        private static void BuildTreeChain(Transform parent, string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers, float x, float baseY, Sprite lockedBackground, AbilityInfoPanelUI infoPanel)
         {
-            string sourcePath = $"Assets/_Project/Art/UI/{tree.iconFileName}.png";
-            string outputPath = $"Assets/_Project/Textures/Icons/{tree.iconFileName}.png";
+            for (int tierIndex = 0; tierIndex < tiers.Length; tierIndex++)
+            {
+                var tier = tiers[tierIndex];
+                float y = baseY + tierIndex * TreeTierSpacing;
+                string prerequisiteAbilityName = tierIndex > 0 ? tiers[tierIndex - 1].abilityName : string.Empty;
+
+                if (tierIndex > 0)
+                {
+                    BuildTreeConnectorLine(parent, x, y - TreeTierSpacing, y);
+                }
+
+                BuildTreeNode(parent, treeTitle, tier, prerequisiteAbilityName, x, y, lockedBackground, infoPanel, showTitle: tierIndex == 0);
+            }
+        }
+
+        // Plain vertical white bar — tiers in the same chain always sit directly above one
+        // another (same x), so no rotation math is needed to connect them. Forced to the first
+        // sibling slot so it renders behind every node regardless of build order.
+        private static void BuildTreeConnectorLine(Transform parent, float x, float fromY, float toY)
+        {
+            GameObject lineObject = new GameObject("Connector", typeof(Image));
+            lineObject.transform.SetParent(parent, false);
+            RectTransform lineRect = lineObject.GetComponent<RectTransform>();
+            lineRect.anchorMin = new Vector2(0.5f, 0.5f);
+            lineRect.anchorMax = new Vector2(0.5f, 0.5f);
+            lineRect.pivot = new Vector2(0.5f, 0.5f);
+            lineRect.anchoredPosition = new Vector2(x, (fromY + toY) * 0.5f);
+            lineRect.sizeDelta = new Vector2(4f, Mathf.Abs(toY - fromY));
+
+            Image lineImage = lineObject.GetComponent<Image>();
+            lineImage.color = new Color(1f, 1f, 1f, 0.6f);
+            lineImage.raycastTarget = false;
+
+            lineObject.transform.SetAsFirstSibling();
+        }
+
+        private static void BuildTreeNode(Transform parent, string treeTitle, (string abilityName, string iconFileName, string description, int cost) tier, string prerequisiteAbilityName, float x, float y, Sprite lockedBackground, AbilityInfoPanelUI infoPanel, bool showTitle)
+        {
+            string sourcePath = $"Assets/_Project/Art/UI/{tier.iconFileName}.png";
+            string outputPath = $"Assets/_Project/Textures/Icons/{tier.iconFileName}.png";
             Sprite iconSprite = ConvertGlyphToTransparentSprite(sourcePath, outputPath);
             Sprite glowSprite = CreateGlowCircleSprite();
             Sprite ringSprite = CreateHoverRingSprite();
 
             // Fixed outer node — never scales, so the glow halo and tree title underneath stay
             // put while the "Visual" child (background/icon/border) enlarges on hover.
-            GameObject nodeObject = new GameObject($"Node_{tree.treeTitle}", typeof(RectTransform));
+            GameObject nodeObject = new GameObject($"Node_{tier.abilityName}", typeof(RectTransform));
             nodeObject.transform.SetParent(parent, false);
             RectTransform nodeRect = nodeObject.GetComponent<RectTransform>();
             nodeRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -985,6 +1048,7 @@ namespace Darclite.EditorTools
             // Raycastable — this is the Graphic AbilityNodeUI's pointer events fire against.
             backgroundImage.raycastTarget = true;
 
+            Image iconImage = null;
             if (iconSprite != null)
             {
                 GameObject iconObject = new GameObject("Icon", typeof(Image));
@@ -995,11 +1059,12 @@ namespace Darclite.EditorTools
                 iconRect.pivot = new Vector2(0.5f, 0.5f);
                 iconRect.anchoredPosition = Vector2.zero;
                 iconRect.sizeDelta = new Vector2(52f, 52f);
-                Image iconImage = iconObject.GetComponent<Image>();
+                iconImage = iconObject.GetComponent<Image>();
                 iconImage.sprite = iconSprite;
                 iconImage.type = Image.Type.Simple;
-                // Locked/greyed until it's actually unlockable — no click-to-unlock logic exists
-                // yet, so every node just starts (and stays, for now) in this dimmed state.
+                // Starting/locked look — AbilityNodeUI.RefreshLockVisual() re-applies the correct
+                // tint on enable based on actual unlock state, so this just matches the locked
+                // case as a sane default before that first runs.
                 iconImage.color = new Color(0.55f, 0.57f, 0.62f, 0.9f);
                 iconImage.raycastTarget = false;
             }
@@ -1018,34 +1083,39 @@ namespace Darclite.EditorTools
             borderImage.color = new Color(1f, 0.92f, 0.6f, 1f);
             borderImage.raycastTarget = false;
 
-            GameObject titleObject = new GameObject("TreeTitle", typeof(Text));
-            titleObject.transform.SetParent(nodeObject.transform, false);
-            RectTransform titleRect = titleObject.GetComponent<RectTransform>();
-            titleRect.anchorMin = new Vector2(0.5f, 0f);
-            titleRect.anchorMax = new Vector2(0.5f, 0f);
-            titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -14f);
-            titleRect.sizeDelta = new Vector2(220f, 30f);
-            Text titleText = titleObject.GetComponent<Text>();
-            titleText.font = SceneBootstrapper.GetGameFont();
-            titleText.fontSize = 18;
-            titleText.fontStyle = FontStyle.Bold;
-            titleText.color = new Color(1f, 1f, 1f, 0.85f);
-            titleText.alignment = TextAnchor.MiddleCenter;
-            titleText.text = tree.treeTitle.ToUpperInvariant();
-            titleText.raycastTarget = false;
+            if (showTitle)
+            {
+                GameObject titleObject = new GameObject("TreeTitle", typeof(Text));
+                titleObject.transform.SetParent(nodeObject.transform, false);
+                RectTransform titleRect = titleObject.GetComponent<RectTransform>();
+                titleRect.anchorMin = new Vector2(0.5f, 0f);
+                titleRect.anchorMax = new Vector2(0.5f, 0f);
+                titleRect.pivot = new Vector2(0.5f, 1f);
+                titleRect.anchoredPosition = new Vector2(0f, -14f);
+                titleRect.sizeDelta = new Vector2(220f, 30f);
+                Text titleText = titleObject.GetComponent<Text>();
+                titleText.font = SceneBootstrapper.GetGameFont();
+                titleText.fontSize = 18;
+                titleText.fontStyle = FontStyle.Bold;
+                titleText.color = new Color(1f, 1f, 1f, 0.85f);
+                titleText.alignment = TextAnchor.MiddleCenter;
+                titleText.text = treeTitle.ToUpperInvariant();
+                titleText.raycastTarget = false;
+            }
 
             AbilityNodeUI nodeUI = backgroundObject.AddComponent<AbilityNodeUI>();
             SerializedObject nodeSo = new SerializedObject(nodeUI);
             nodeSo.FindProperty("visualRoot").objectReferenceValue = visualObject.GetComponent<RectTransform>();
             nodeSo.FindProperty("hoverGlowImage").objectReferenceValue = glowImage;
             nodeSo.FindProperty("hoverBorderImage").objectReferenceValue = borderImage;
+            nodeSo.FindProperty("iconImage").objectReferenceValue = iconImage;
             nodeSo.FindProperty("infoPanel").objectReferenceValue = infoPanel;
-            nodeSo.FindProperty("abilityName").stringValue = tree.abilityName;
-            nodeSo.FindProperty("abilityDescription").stringValue = tree.description;
-            nodeSo.FindProperty("treeTitle").stringValue = tree.treeTitle;
-            nodeSo.FindProperty("cost").intValue = tree.cost;
+            nodeSo.FindProperty("abilityName").stringValue = tier.abilityName;
+            nodeSo.FindProperty("abilityDescription").stringValue = tier.description;
+            nodeSo.FindProperty("treeTitle").stringValue = treeTitle;
+            nodeSo.FindProperty("cost").intValue = tier.cost;
             nodeSo.FindProperty("iconSprite").objectReferenceValue = iconSprite;
+            nodeSo.FindProperty("prerequisiteAbilityName").stringValue = prerequisiteAbilityName;
             nodeSo.ApplyModifiedProperties();
         }
 
@@ -1366,10 +1436,11 @@ namespace Darclite.EditorTools
             pageSo.FindProperty("infoPanel").objectReferenceValue = infoPanel;
             pageSo.FindProperty("dragLayer").objectReferenceValue = dragLayerRect;
 
-            var defaultAbility = LiteTrees[0];
+            var defaultTree = LiteTrees[0];
+            var defaultAbility = defaultTree.tiers[0];
             pageSo.FindProperty("defaultAbilityName").stringValue = defaultAbility.abilityName;
             pageSo.FindProperty("defaultAbilityDescription").stringValue = defaultAbility.description;
-            pageSo.FindProperty("defaultTreeTitle").stringValue = defaultAbility.treeTitle;
+            pageSo.FindProperty("defaultTreeTitle").stringValue = defaultTree.treeTitle;
             pageSo.FindProperty("defaultCost").intValue = defaultAbility.cost;
             pageSo.FindProperty("defaultIconSprite").objectReferenceValue = ConvertGlyphToTransparentSprite(
                 $"Assets/_Project/Art/UI/{defaultAbility.iconFileName}.png",
@@ -1446,7 +1517,7 @@ namespace Darclite.EditorTools
         }
 
         private static void BuildCategoryBox(Transform parent, string label, Color glowColor, float x, float y, float width, float height,
-            (string treeTitle, string abilityName, string iconFileName, string description, int cost)[] abilities,
+            (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers)[] trees,
             Sprite slotBackground)
         {
             GameObject boxObject = new GameObject($"Box_{label}", typeof(RectTransform));
@@ -1496,30 +1567,71 @@ namespace Darclite.EditorTools
             headerText.raycastTarget = false;
             AddGlow(headerObject, glowColor);
 
-            if (abilities == null || abilities.Length == 0)
+            if (trees == null || trees.Length == 0)
             {
                 return;
+            }
+
+            int totalIcons = 0;
+            foreach (var tree in trees)
+            {
+                totalIcons += tree.tiers.Length;
             }
 
             const float iconSize = 48f;
             const float iconGap = 12f;
             const float iconY = -60f;
-            float rowWidth = abilities.Length * iconSize + (abilities.Length - 1) * iconGap;
+            float rowWidth = totalIcons * iconSize + (totalIcons - 1) * iconGap;
             float startX = -rowWidth / 2f;
 
-            for (int i = 0; i < abilities.Length; i++)
+            // Every tier of every tree lays out left-to-right in one flat row (a multi-tier chain
+            // just contributes more than one icon), but only tiers within the SAME chain ever
+            // reference each other for the supersede/replace behavior.
+            int iconPosition = 0;
+            foreach (var tree in trees)
             {
-                float iconX = startX + i * (iconSize + iconGap) + iconSize / 2f;
-                BuildAbilityIcon(boxObject.transform, abilities[i], iconX, iconY, iconSize, slotBackground);
+                AbilityTierGateUI previousGate = null;
+                for (int tierIndex = 0; tierIndex < tree.tiers.Length; tierIndex++)
+                {
+                    var tier = tree.tiers[tierIndex];
+                    float iconX = startX + iconPosition * (iconSize + iconGap) + iconSize / 2f;
+                    AbilityIconUI icon = BuildAbilityIcon(boxObject.transform,
+                        (tree.treeTitle, tier.abilityName, tier.iconFileName, tier.description, tier.cost),
+                        iconX, iconY, iconSize, slotBackground);
+
+                    // On NodeRoot (the whole draggable unit), not the sub-object AbilityIconUI
+                    // itself lives on — hiding needs to hide background+icon+glow+border together,
+                    // and NodeRoot is what actually gets reparented on drag/equip.
+                    GameObject gateObject = icon.NodeRoot.gameObject;
+                    gateObject.AddComponent<CanvasGroup>();
+                    AbilityTierGateUI gate = gateObject.AddComponent<AbilityTierGateUI>();
+                    SerializedObject gateSo = new SerializedObject(gate);
+                    gateSo.FindProperty("icon").objectReferenceValue = icon;
+                    gateSo.FindProperty("previousTier").objectReferenceValue = previousGate;
+                    gateSo.ApplyModifiedProperties();
+
+                    // Back-fill the tier before this one — it doesn't know what supersedes it
+                    // until this (later) tier actually exists.
+                    if (previousGate != null)
+                    {
+                        SerializedObject previousGateSo = new SerializedObject(previousGate);
+                        previousGateSo.FindProperty("supersededByAbilityName").stringValue = tier.abilityName;
+                        previousGateSo.ApplyModifiedProperties();
+                    }
+
+                    previousGate = gate;
+                    iconPosition++;
+                }
             }
         }
 
-        // Smaller, title-less sibling of BuildTreeBaseNode's ability node — used for the icons
+        // Smaller, title-less sibling of BuildTreeNode's ability node — used for the icons
         // inside each Abilities-page category box. Unlike the Lite tree's locked nodes, these
-        // render at full brightness (they represent abilities already "unlocked"), stay
-        // persistently highlighted once selected (not just on hover), and can be dragged into a
-        // hotbar slot — all driven by AbilityIconUI rather than the Lite tree's AbilityNodeUI.
-        private static void BuildAbilityIcon(Transform parent, (string treeTitle, string abilityName, string iconFileName, string description, int cost) ability, float x, float y, float size, Sprite backgroundSprite)
+        // render at full brightness once unlocked (an AbilityTierGateUI added alongside this in
+        // BuildCategoryBox handles staying hidden until then), stay persistently highlighted once
+        // selected (not just on hover), and can be dragged into a hotbar slot — all driven by
+        // AbilityIconUI rather than the Lite tree's AbilityNodeUI.
+        private static AbilityIconUI BuildAbilityIcon(Transform parent, (string treeTitle, string abilityName, string iconFileName, string description, int cost) ability, float x, float y, float size, Sprite backgroundSprite)
         {
             string sourcePath = $"Assets/_Project/Art/UI/{ability.iconFileName}.png";
             string outputPath = $"Assets/_Project/Textures/Icons/{ability.iconFileName}.png";
@@ -1607,6 +1719,8 @@ namespace Darclite.EditorTools
             nodeSo.FindProperty("cost").intValue = ability.cost;
             nodeSo.FindProperty("iconSprite").objectReferenceValue = iconSprite;
             nodeSo.ApplyModifiedProperties();
+
+            return iconUI;
         }
 
         // Layers two soft Outline effects behind a Text to fake a gentle neon glow without a

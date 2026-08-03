@@ -133,6 +133,31 @@ namespace Darclite.Core
             SnapIntoSlot(icon, targetSlot);
         }
 
+        // Called by AbilityTierGateUI when unlocking a new tier supersedes an already-equipped
+        // earlier one — moves whichever hotbar slot(s) held the old ability over to the new one's
+        // icon automatically, the same way a manual drag-drop would, since the player never
+        // dragged anything themselves for this to happen.
+        public void ReplaceEquippedAbility(string oldAbilityName, AbilityIconUI newIcon)
+        {
+            for (int i = 0; i < hotbarSlots.Length; i++)
+            {
+                AbilityHotbarSlotUI slot = hotbarSlots[i];
+                AbilityIconUI oldIcon = slot != null ? slot.EquippedIcon : null;
+                if (oldIcon == null || oldIcon.AbilityName != oldAbilityName)
+                {
+                    continue;
+                }
+
+                oldIcon.CurrentSlot = null;
+                slot.Clear();
+
+                slot.SetEquipped(newIcon);
+                newIcon.CurrentSlot = slot;
+                AbilityLoadout.SetSlot(slot.SlotIndex, newIcon.IconSprite, newIcon.AbilityName);
+                SnapIntoSlot(newIcon, slot);
+            }
+        }
+
         // Slots always center their occupant regardless of scale, unlike a category box's
         // top-anchored layout — so equipping switches the node to center anchoring/pivot.
         private static void SnapIntoSlot(AbilityIconUI icon, AbilityHotbarSlotUI slot)
