@@ -308,6 +308,7 @@ namespace Darclite.EditorTools
             SetupLiteRecoveryAbility(player, animator, combatant);
             SetupLiteBracingAbility(player);
             SetupLiteReleaseAbility(player, animator);
+            SetupForcefulStrikeAbility(player, animator);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -789,6 +790,98 @@ namespace Darclite.EditorTools
 
             Debug.LogWarning($"[SceneBootstrapper] Could not find Lite animation clip at {path}");
             return 0f;
+        }
+
+        // ==================== Forceful Strike Ability ====================
+
+        private const string ForcefulStrikeVfxAssetPath = "Assets/_Project/VFX/Forceful Strike.vfx";
+        private const string ForcefulStrikeImpactVfxAssetPath = "Assets/_Project/VFX/Forceful Strike Impact.vfx";
+
+        // No cast animation of its own (unlike Lite Release) — this is a passive-until-triggered
+        // buff on your next ordinary punch, so it only needs VFX/audio wiring, never touching the
+        // Animator Controller at all.
+        private static void SetupForcefulStrikeAbility(GameObject player, Animator animator)
+        {
+            foreach (string name in new[] { "ForcefulStrikeVFX_LeftHand", "ForcefulStrikeVFX_RightHand", "ForcefulStrikeImpactVFX" })
+            {
+                Transform existing = FindDescendant(player.transform, name);
+                if (existing != null)
+                {
+                    Object.DestroyImmediate(existing.gameObject);
+                }
+            }
+
+            if (animator == null)
+            {
+                Debug.LogWarning("[SceneBootstrapper] No Animator on player model; skipping Forceful Strike ability setup.");
+                return;
+            }
+
+            Transform[] hands = { animator.GetBoneTransform(HumanBodyBones.LeftHand), animator.GetBoneTransform(HumanBodyBones.RightHand) };
+            if (hands[0] == null || hands[1] == null)
+            {
+                Debug.LogWarning("[SceneBootstrapper] Could not resolve hand bones on player model; skipping Forceful Strike ability setup.");
+                return;
+            }
+
+            VisualEffectAsset handVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(ForcefulStrikeVfxAssetPath);
+            if (handVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Forceful Strike VFX asset at {ForcefulStrikeVfxAssetPath}");
+            }
+
+            VisualEffectAsset impactVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(ForcefulStrikeImpactVfxAssetPath);
+            if (impactVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Forceful Strike Impact VFX asset at {ForcefulStrikeImpactVfxAssetPath}");
+            }
+
+            string[] handSideNames = { "LeftHand", "RightHand" };
+            VisualEffect[] handVfx = new VisualEffect[2];
+            for (int i = 0; i < 2; i++)
+            {
+                if (handVfxAsset != null)
+                {
+                    handVfx[i] = BuildHandVfx($"ForcefulStrikeVFX_{handSideNames[i]}", hands[i], handVfxAsset);
+                }
+            }
+
+            VisualEffect impactVfx = null;
+            if (impactVfxAsset != null)
+            {
+                GameObject impactObject = new GameObject("ForcefulStrikeImpactVFX", typeof(VisualEffect));
+                impactObject.transform.SetParent(player.transform, false);
+                impactVfx = impactObject.GetComponent<VisualEffect>();
+                impactVfx.visualEffectAsset = impactVfxAsset;
+            }
+
+            AudioSource loopAudioSource = BuildLoopAudioSource("ForcefulStrikeAudioSource", player.transform);
+            AudioClip chargeLoopClip = LoadAudioClip(LiteAudioFolder, "Lite Background 2");
+
+            Transform existingImpactAudio = FindDescendant(player.transform, "ForcefulStrikeImpactAudioSource");
+            GameObject impactAudioObject = existingImpactAudio != null ? existingImpactAudio.gameObject : new GameObject("ForcefulStrikeImpactAudioSource", typeof(AudioSource));
+            impactAudioObject.transform.SetParent(player.transform, false);
+            AudioSource impactAudioSource = impactAudioObject.GetComponent<AudioSource>();
+            impactAudioSource.playOnAwake = false;
+            impactAudioSource.loop = false;
+            impactAudioSource.spatialBlend = 1f;
+
+            AudioClip impactClip = LoadAudioClip(LiteAudioFolder, "Forceful Impact");
+
+            ForcefulStrikeAbility abilityController = player.GetComponent<ForcefulStrikeAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<ForcefulStrikeAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            AssignObjectArray(abilitySo, "handVfx", handVfx);
+            abilitySo.FindProperty("impactVfx").objectReferenceValue = impactVfx;
+            abilitySo.FindProperty("loopAudioSource").objectReferenceValue = loopAudioSource;
+            abilitySo.FindProperty("chargeLoopClip").objectReferenceValue = chargeLoopClip;
+            abilitySo.FindProperty("impactAudioSource").objectReferenceValue = impactAudioSource;
+            abilitySo.FindProperty("impactClip").objectReferenceValue = impactClip;
+            abilitySo.ApplyModifiedProperties();
         }
 
         // Ambient drifting motes — the original diffuse cloud, now warm-tinted and slightly

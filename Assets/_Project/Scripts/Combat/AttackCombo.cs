@@ -58,6 +58,7 @@ namespace Darclite.Combat
         private Combatant _combatant;
         private CharacterAudio _characterAudio;
         private LiteConcentrationAura _liteConcentrationAura;
+        private ForcefulStrikeAbility _forcefulStrikeAbility;
 
         private void Awake()
         {
@@ -70,6 +71,7 @@ namespace Darclite.Combat
             _characterAudio = GetComponent<CharacterAudio>();
             // Null for anyone who can't use the ability (enemies) — guarded at every use below.
             _liteConcentrationAura = GetComponent<LiteConcentrationAura>();
+            _forcefulStrikeAbility = GetComponent<ForcefulStrikeAbility>();
         }
 
         private void Update()
@@ -203,14 +205,24 @@ namespace Darclite.Combat
             }
 
             bool isBlockBroken = targetGuard != null && targetGuard.CurrentGuardState == GuardState.Vulnerable;
+            // Guaranteed false whenever Forceful Strike is active, since activating it force-
+            // deactivates Lite Concentration (only one damage powerup at a time) — no extra
+            // exclusion check needed here.
             bool useLiteHit = _liteConcentrationAura != null && _liteConcentrationAura.IsActive;
+            bool forcefulStrikeActive = _forcefulStrikeAbility != null && _forcefulStrikeAbility.IsActive;
             // Reads whichever tier (I or II) is actually equipped/active — 20% vs 30% — rather
             // than a fixed constant, since only one tier can ever be active at a time.
             float liteMultiplier = useLiteHit ? _liteConcentrationAura.DamageMultiplier : 1f;
             int boostedDamage = useLiteHit ? Mathf.RoundToInt(damage * liteMultiplier) : damage;
+            if (forcefulStrikeActive)
+            {
+                boostedDamage += ForcefulStrikeAbility.BonusDamage;
+            }
             int finalDamage = isBlockBroken ? boostedDamage * 2 : boostedDamage;
 
-            if (isHeavy || isBlockBroken)
+            // A Forceful Strike-boosted punch always knocks back, even mid-combo on what would
+            // otherwise be a plain light hit — it's meant to land like a heavy/combo-ending punch.
+            if (isHeavy || isBlockBroken || forcefulStrikeActive)
             {
                 targetCombatant.TakeKnockback(finalDamage, selfPosition, useLiteHit);
             }
@@ -222,6 +234,13 @@ namespace Darclite.Combat
             if (isBlockBroken)
             {
                 targetGuard.OnBlockBroken();
+            }
+
+            // Only reached once the swing actually connects — a blocked attempt returns false
+            // above and never consumes the charge.
+            if (forcefulStrikeActive)
+            {
+                _forcefulStrikeAbility.ConsumeOnHit(target.position);
             }
 
             return true;

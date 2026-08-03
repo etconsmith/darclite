@@ -886,6 +886,8 @@ namespace Darclite.EditorTools
         {
             ("Attack", "Lite Concentration", "Lite Release", "Lite Release",
                 "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
+            ("Attack", "Lite Concentration II", "Forceful Strike", "Forceful Strike",
+                "Channel Lite into your fist, adding extra force and a knockback to your next strike.", 0),
         };
 
         private static (GameObject content, Text availablePointsText) BuildLitePageContent(Transform parent)

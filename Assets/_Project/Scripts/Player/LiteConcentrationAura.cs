@@ -137,6 +137,33 @@ namespace Darclite.Player
             _activeRoutine = StartCoroutine(PlayAura());
         }
 
+        // Called by ForcefulStrikeAbility when it activates — only one damage powerup is meant to
+        // be active at a time, so an in-progress Concentration cast gets cut off immediately rather
+        // than waiting for its normal settle/hold/fade envelope to finish on its own.
+        public void Deactivate()
+        {
+            if (!IsActive)
+            {
+                return;
+            }
+
+            if (_activeRoutine != null)
+            {
+                StopCoroutine(_activeRoutine);
+                _activeRoutine = null;
+            }
+            if (_audioFadeRoutine != null)
+            {
+                StopCoroutine(_audioFadeRoutine);
+                _audioFadeRoutine = null;
+            }
+
+            SetSustainedParticlesPlaying(false);
+            ApplyIntensity(0f);
+            loopAudioSource?.Stop();
+            IsActive = false;
+        }
+
         private static void RestartOneShot(ParticleSystem system)
         {
             if (system == null)
