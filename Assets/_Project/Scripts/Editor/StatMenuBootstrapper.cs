@@ -909,7 +909,7 @@ namespace Darclite.EditorTools
         // Deliberately much bigger than the tree actually needs today — this is the pannable
         // "map" the tree sits inside of, sized with headroom for future trees/tiers rather than
         // tight-fit around the current nodes.
-        private static readonly Vector2 LiteTreeBackgroundSize = new Vector2(2600f, 1700f);
+        private static readonly Vector2 LiteTreeBackgroundSize = new Vector2(4200f, 2800f);
 
         private static (GameObject content, Text availablePointsText) BuildLitePageContent(Transform parent)
         {
@@ -946,7 +946,7 @@ namespace Darclite.EditorTools
             treeContent.transform.SetParent(content.transform, false);
             SceneBootstrapper.StretchRect(treeContent.GetComponent<RectTransform>());
 
-            Sprite gridSprite = BuildLiteTreeBackground(treeContent.transform, backgroundMin, backgroundMax);
+            BuildLiteTreeBackground(treeContent.transform, backgroundMin, backgroundMax);
 
             AbilityInfoPanelUI infoPanel = BuildAbilityInfoPanel(content.transform, new Vector2(-60f, -110f), new Vector2(420f, 260f));
 
@@ -969,10 +969,6 @@ namespace Darclite.EditorTools
             panSo.FindProperty("panContent").objectReferenceValue = treeContent.GetComponent<RectTransform>();
             panSo.FindProperty("contentMin").vector2Value = backgroundMin;
             panSo.FindProperty("contentMax").vector2Value = backgroundMax;
-            panSo.FindProperty("trailSprite").objectReferenceValue = gridSprite;
-            panSo.FindProperty("trailSize").vector2Value = LiteTreeBackgroundSize;
-            panSo.FindProperty("trailCenterOffset").vector2Value = centroid;
-            panSo.FindProperty("trailColor").colorValue = new Color(0.55f, 0.7f, 0.95f, 1f);
             panSo.ApplyModifiedProperties();
 
             content.SetActive(false);
@@ -1026,10 +1022,14 @@ namespace Darclite.EditorTools
             return (new Vector2(minX, minY), new Vector2(maxX, maxY));
         }
 
+        // Fill, tiled grid detail, border trim — keep this in sync with LiteTreeBackgroundLayerCount
+        // below, which connector lines rely on to insert themselves right after these three.
+        private const int LiteTreeBackgroundLayerCount = 3;
+
         // Fill + tiled grid detail + a glowing border trim, all 9-sliced/tiled so they scale
         // cleanly to whatever size the pan area ends up being. Same visual language as the shared
         // panel background (navy fill, blue grid) so the tree reads as part of the same UI.
-        private static Sprite BuildLiteTreeBackground(Transform parent, Vector2 min, Vector2 max)
+        private static void BuildLiteTreeBackground(Transform parent, Vector2 min, Vector2 max)
         {
             Vector2 size = max - min;
             Vector2 center = (min + max) * 0.5f;
@@ -1046,7 +1046,10 @@ namespace Darclite.EditorTools
             Image fillImage = fillObject.GetComponent<Image>();
             fillImage.sprite = SceneBootstrapper.CreateRoundedRectSprite();
             fillImage.type = Image.Type.Sliced;
-            fillImage.color = new Color(0.04f, 0.07f, 0.13f, 0.92f);
+            // Fully opaque, unlike the shared panel background — this sits on top of (and needs to
+            // fully hide) the panel's own translucent NavyBackground/GridPattern, which otherwise
+            // shows through and double-grids against this page's own (panning) grid layer.
+            fillImage.color = new Color(0.04f, 0.07f, 0.13f, 1f);
             fillImage.raycastTarget = false;
 
             GameObject gridObject = new GameObject("TreeBackgroundGrid", typeof(Image));
@@ -1076,8 +1079,6 @@ namespace Darclite.EditorTools
             borderImage.type = Image.Type.Sliced;
             borderImage.color = new Color(1f, 0.82f, 0.35f, 0.55f);
             borderImage.raycastTarget = false;
-
-            return gridSprite;
         }
 
         // Bottom-of-page readout for how many banked Lite points are still unspent — the same
@@ -1166,8 +1167,11 @@ namespace Darclite.EditorTools
 
         // Generic connector between two arbitrary points — used for the vertical tier-chain bars
         // above and for diagonal branch connectors (BuildTreeBranches), which hang a node off to
-        // the side of its prerequisite instead of stacking directly above it. Forced to the first
-        // sibling slot so it renders behind every node regardless of build order.
+        // the side of its prerequisite instead of stacking directly above it. Forced to sit right
+        // after the tree's background layers (see LiteTreeBackgroundLayerCount) so it renders
+        // behind every node but in front of the background, regardless of build order — plain
+        // "first sibling" would put it behind the background too now that the background lives in
+        // this same container.
         private static void BuildTreeConnectorLineBetween(Transform parent, Vector2 from, Vector2 to)
         {
             GameObject lineObject = new GameObject("Connector", typeof(Image));
@@ -1186,7 +1190,7 @@ namespace Darclite.EditorTools
             lineImage.color = new Color(1f, 1f, 1f, 0.6f);
             lineImage.raycastTarget = false;
 
-            lineObject.transform.SetAsFirstSibling();
+            lineObject.transform.SetSiblingIndex(LiteTreeBackgroundLayerCount);
         }
 
         private const float BranchXOffset = 160f;
