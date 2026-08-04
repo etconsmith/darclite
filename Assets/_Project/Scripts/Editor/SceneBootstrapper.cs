@@ -57,16 +57,13 @@ namespace Darclite.EditorTools
                 AssetDatabase.CreateAsset(material, FloorMaterialPath);
             }
 
-            Shader toonShader = Shader.Find("Darclite/ToonLit");
+            Shader toonShader = Shader.Find("Darclite/AshenLit");
             if (toonShader != null)
             {
                 material.shader = toonShader;
             }
 
             material.SetColor("_BaseColor", new Color(0.35f, 0.55f, 0.3f));
-            // The floor is a Cube scaled 50x on X/Z; outline extrusion is in object space,
-            // so its width must be scaled down to match the character's world-space outline thickness.
-            material.SetFloat("_OutlineWidth", 0.02f / 50f);
             EditorUtility.SetDirty(material);
             AssetDatabase.SaveAssets();
             return material;
@@ -2669,7 +2666,7 @@ namespace Darclite.EditorTools
                 AssetDatabase.CreateAsset(material, materialPath);
             }
 
-            Shader toonShader = Shader.Find("Darclite/ToonLit");
+            Shader toonShader = Shader.Find("Darclite/AshenLit");
             if (toonShader != null)
             {
                 material.shader = toonShader;
@@ -2679,14 +2676,6 @@ namespace Darclite.EditorTools
             material.SetColor("_BaseColor", Color.white);
 
             Renderer[] renderers = model.GetComponentsInChildren<Renderer>();
-
-            // The outline shader extrudes in object space, but this rig bakes a large uniform
-            // scale (e.g. 100x) into the hierarchy above the mesh to reach real-world size.
-            // Compensate so the outline reads as a consistent real-world thickness.
-            const float desiredWorldOutlineThickness = 0.015f;
-            float lossyScale = renderers.Length > 0 ? renderers[0].transform.lossyScale.x : 1f;
-            float objectSpaceOutlineWidth = lossyScale > 0f ? desiredWorldOutlineThickness / lossyScale : desiredWorldOutlineThickness;
-            material.SetFloat("_OutlineWidth", objectSpaceOutlineWidth);
 
             EditorUtility.SetDirty(material);
             AssetDatabase.SaveAssets();

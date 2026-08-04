@@ -7,8 +7,8 @@ namespace Darclite.Dialogue
     [AddComponentMenu("Darclite/NPC Interactable")]
     public class NPCInteractable : MonoBehaviour
     {
-        private static readonly int OutlineColorParam = Shader.PropertyToID("_OutlineColor");
-        private static readonly int OutlineWidthParam = Shader.PropertyToID("_OutlineWidth");
+        private static readonly int RimColorParam = Shader.PropertyToID("_RimColor");
+        private static readonly int RimStrengthParam = Shader.PropertyToID("_RimStrength");
 
         [SerializeField] private string npcName = "Quest Giver";
         [SerializeField] private Transform player;
@@ -23,12 +23,10 @@ namespace Darclite.Dialogue
         [SerializeField] private float lookAngleThreshold = 30f;
 
         [Header("Highlight")]
-        [SerializeField] private Color highlightOutlineColor = new Color(1f, 0.85f, 0.3f, 1f);
-        // Multiplier on the material's own authored outline width, not an absolute value — this
-        // rig bakes a large uniform scale into its hierarchy, so the outline shader's object-space
-        // width has to stay proportional to that scale (see ApplyCharacterMaterial) or a fixed
-        // number either does nothing or, as before, balloons into a sphere around the character.
-        [SerializeField] private float highlightOutlineWidthMultiplier = 5f;
+        // A boosted rim glow instead of an outline — fits the soft-lit AshenLit shader (no hard
+        // edges) while still reading clearly as "you can interact with this."
+        [SerializeField] private Color highlightRimColor = new Color(1f, 0.85f, 0.3f, 1f);
+        [SerializeField] private float highlightRimStrength = 0.9f;
 
         public string NpcName => npcName;
         public LLMAgent LlmAgent => llmAgent;
@@ -36,9 +34,8 @@ namespace Darclite.Dialogue
 
         private UnityEngine.Camera _mainCamera;
         private MaterialPropertyBlock _propertyBlock;
-        private Color _baseOutlineColor;
-        private float _baseOutlineWidth;
-        private float _highlightOutlineWidth;
+        private Color _baseRimColor;
+        private float _baseRimStrength;
         private bool _isHighlighted;
         private bool _isChatting;
 
@@ -75,12 +72,10 @@ namespace Darclite.Dialogue
                 Material sharedMaterial = highlightRenderers[0].sharedMaterial;
                 if (sharedMaterial != null)
                 {
-                    _baseOutlineColor = sharedMaterial.GetColor(OutlineColorParam);
-                    _baseOutlineWidth = sharedMaterial.GetFloat(OutlineWidthParam);
+                    _baseRimColor = sharedMaterial.GetColor(RimColorParam);
+                    _baseRimStrength = sharedMaterial.GetFloat(RimStrengthParam);
                 }
             }
-
-            _highlightOutlineWidth = _baseOutlineWidth * highlightOutlineWidthMultiplier;
         }
 
         private void Update()
@@ -166,13 +161,13 @@ namespace Darclite.Dialogue
                 targetRenderer.GetPropertyBlock(_propertyBlock);
                 if (highlighted)
                 {
-                    _propertyBlock.SetColor(OutlineColorParam, highlightOutlineColor);
-                    _propertyBlock.SetFloat(OutlineWidthParam, _highlightOutlineWidth);
+                    _propertyBlock.SetColor(RimColorParam, highlightRimColor);
+                    _propertyBlock.SetFloat(RimStrengthParam, highlightRimStrength);
                 }
                 else
                 {
-                    _propertyBlock.SetColor(OutlineColorParam, _baseOutlineColor);
-                    _propertyBlock.SetFloat(OutlineWidthParam, _baseOutlineWidth);
+                    _propertyBlock.SetColor(RimColorParam, _baseRimColor);
+                    _propertyBlock.SetFloat(RimStrengthParam, _baseRimStrength);
                 }
                 targetRenderer.SetPropertyBlock(_propertyBlock);
             }
