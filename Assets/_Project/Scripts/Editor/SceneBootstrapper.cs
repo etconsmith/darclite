@@ -433,6 +433,12 @@ namespace Darclite.EditorTools
             Transform existing = FindDescendant(character.transform, name);
             GameObject vfxObject = existing != null ? existing.gameObject : new GameObject(name, typeof(VisualEffect));
             vfxObject.transform.SetParent(character.transform, false);
+            // SetParent(..., false) leaves local position/rotation/scale untouched — reusing an
+            // existing object (Player/Enemy, whose setup tools never destroy the character root)
+            // silently carries forward whatever scale it happened to end up with historically,
+            // while a freshly-created one (Quest NPC, which is fully destroyed/recreated every run)
+            // always starts at the correct default. Force it explicitly so both paths match.
+            vfxObject.transform.localScale = Vector3.one;
 
             VisualEffect visualEffect = vfxObject.GetComponent<VisualEffect>();
             visualEffect.visualEffectAsset = asset;
