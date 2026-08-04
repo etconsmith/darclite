@@ -64,6 +64,15 @@ namespace Darclite.Core
         private void Awake()
         {
             _background = GetComponent<Image>();
+        }
+
+        // nodeRoot/hoverGlowImage/hoverBorderImage are wired by StatMenuBootstrapper via
+        // SerializedObject right after AddComponent<AbilityIconUI>() — but Unity calls Awake()
+        // synchronously as part of AddComponent() itself, before that wiring happens, so reading
+        // them there always sees null. Start() runs later (editor tooling finishes wiring fields
+        // long before Play mode ever reaches Start()), so it's safe here.
+        private void Start()
+        {
             HomeParent = nodeRoot.parent;
             HomeAnchorMin = nodeRoot.anchorMin;
             HomeAnchorMax = nodeRoot.anchorMax;
