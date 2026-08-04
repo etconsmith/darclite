@@ -1,4 +1,5 @@
 using System.Collections;
+using Darclite.Player;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -45,6 +46,7 @@ namespace Darclite.Combat
         private AttackCombo _attackCombo;
         private CharacterAudio _characterAudio;
         private AttackCombo _opponentAttackCombo;
+        private AttackSensingAbility _attackSensingAbility;
         private bool _lastGuardWasDodge;
         private Coroutine _guardCoroutine;
 
@@ -53,6 +55,8 @@ namespace Darclite.Combat
             _combatant = GetComponent<Combatant>();
             _attackCombo = GetComponent<AttackCombo>();
             _characterAudio = GetComponent<CharacterAudio>();
+            // Null for anyone who can't use the ability (enemies) — guarded at every use below.
+            _attackSensingAbility = GetComponent<AttackSensingAbility>();
 
             if (animator == null)
             {
@@ -94,9 +98,23 @@ namespace Darclite.Combat
                 return;
             }
 
-            if (_combatant.IsStunned || _combatant.IsBeingKnockedBack || _attackCombo.IsAttacking)
+            if (_combatant.IsStunned || _combatant.IsBeingKnockedBack)
             {
                 return;
+            }
+
+            bool attackSensingActive = _attackSensingAbility != null && _attackSensingAbility.IsActive;
+
+            if (_attackCombo.IsAttacking)
+            {
+                if (!attackSensingActive)
+                {
+                    return;
+                }
+
+                // Attack Sensing I — cancel the swing outright rather than just ignoring the lockout,
+                // so a canceled punch never lands and immediately reads as "not attacking."
+                _attackCombo.CancelAttack();
             }
 
             // Already being actively combo'd — no guarding your way out of it until it resets.
@@ -119,7 +137,7 @@ namespace Darclite.Combat
                 StopCoroutine(_guardCoroutine);
             }
 
-            _guardCoroutine = StartCoroutine(GuardSequence());
+            _guardCoroutine = StartCoroutine(GuardSequence(attackSensingActive));
         }
 
         private int ChooseGuardIndex()
@@ -142,11 +160,15 @@ namespace Darclite.Combat
             return Random.Range(0, 4);
         }
 
-        private IEnumerator GuardSequence()
+        private IEnumerator GuardSequence(bool extendedDuration)
         {
+            // Set synchronously the instant this runs (before any yield) — invincibility starts
+            // immediately on the same frame as the key press, whether or not it just canceled an
+            // attack, never waiting on the guard/dodge animation to actually begin.
             CurrentGuardState = GuardState.Guarding;
 
-            yield return new WaitForSeconds(guardDuration);
+            float duration = extendedDuration ? guardDuration * AttackSensingAbility.GuardDurationMultiplier : guardDuration;
+            yield return new WaitForSeconds(duration);
 
             CurrentGuardState = GuardState.Vulnerable;
 

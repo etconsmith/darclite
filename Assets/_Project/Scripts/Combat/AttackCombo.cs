@@ -59,6 +59,7 @@ namespace Darclite.Combat
         private CharacterAudio _characterAudio;
         private LiteConcentrationAura _liteConcentrationAura;
         private ForcefulStrikeAbility _forcefulStrikeAbility;
+        private Coroutine _resolveHitRoutine;
 
         private void Awake()
         {
@@ -120,7 +121,7 @@ namespace Darclite.Combat
             CurrentAttackSide = (hitIndex % 2 == 0) ? PunchSide.Left : PunchSide.Right;
             WasLastAttackBlocked = false;
 
-            StartCoroutine(ResolveHitAfterDelay(impactDelay, target, hitIndex, lightDamage, false, isComboHit: true));
+            _resolveHitRoutine = StartCoroutine(ResolveHitAfterDelay(impactDelay, target, hitIndex, lightDamage, false, isComboHit: true));
         }
 
         private void PerformHeavyAttack(Transform target)
@@ -134,10 +135,25 @@ namespace Darclite.Combat
             CurrentAttackSide = PunchSide.None;
             WasLastAttackBlocked = false;
 
-            StartCoroutine(ResolveHitAfterDelay(impactDelay, target, -1, heavyDamage, true, isComboHit: false));
+            _resolveHitRoutine = StartCoroutine(ResolveHitAfterDelay(impactDelay, target, -1, heavyDamage, true, isComboHit: false));
 
             // The heavy swing consumes the combo whether or not it actually connects.
             _comboCount = 0;
+        }
+
+        // Lets Attack Sensing I interrupt your own swing to dodge instead of being locked into it —
+        // stops the pending hit resolution outright (a canceled punch never lands) and clears the
+        // cooldown/side state so BlockDodge's own checks immediately see this as "not attacking."
+        public void CancelAttack()
+        {
+            if (_resolveHitRoutine != null)
+            {
+                StopCoroutine(_resolveHitRoutine);
+                _resolveHitRoutine = null;
+            }
+
+            _attackCooldownTimer = 0f;
+            CurrentAttackSide = PunchSide.None;
         }
 
         private IEnumerator ResolveHitAfterDelay(float impactDelay, Transform target, int hitIndex, int damage, bool isHeavy, bool isComboHit)

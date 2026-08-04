@@ -24,6 +24,9 @@ namespace Darclite.Core
             ("Lite Bracing", 25f),
             ("Lite Release", 30f),
             ("Forceful Strike", 30f),
+            // A pure on/off toggle — the default 40s would make flipping it back off feel
+            // unreasonably sluggish. Long enough to prevent same-frame double-toggle weirdness.
+            ("Attack Sensing I", 1f),
         };
 
         private const float DeniedFlashPeakAlpha = 0.55f;

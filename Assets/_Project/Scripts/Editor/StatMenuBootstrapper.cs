@@ -898,6 +898,8 @@ namespace Darclite.EditorTools
                 "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
             ("Attack", "Lite Concentration II", "Forceful Strike", "Forceful Strike",
                 "Channel Lite into your fist, adding extra force and a knockback to your next strike.", 0),
+            ("Sense", "Power Sense 1", "Attack Sensing I", "Attack Sensing 1",
+                "Heighten your senses — your dodge window lasts 50% longer, and you can cancel a punch or ability into a dodge instead.", 0),
         };
 
         // Column/row layout constants for the Lite tree — shared between the node-placement loop

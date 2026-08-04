@@ -306,6 +306,7 @@ namespace Darclite.EditorTools
             SetupLiteBracingAbility(player);
             SetupLiteReleaseAbility(player, animator);
             SetupForcefulStrikeAbility(player, animator);
+            SetupAttackSensingAbility(player);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -662,6 +663,16 @@ namespace Darclite.EditorTools
             "LiteBracingMotes_LeftArm", "LiteBracingMotes_RightArm",
             "LiteBracingWisps_LeftArm", "LiteBracingWisps_RightArm",
         };
+
+        // A pure toggle read directly off BlockDodge — no VFX/audio/animation of its own, so unlike
+        // every other ability here there's nothing to wire beyond just making sure it exists.
+        private static void SetupAttackSensingAbility(GameObject player)
+        {
+            if (player.GetComponent<AttackSensingAbility>() == null)
+            {
+                player.AddComponent<AttackSensingAbility>();
+            }
+        }
 
         // Parented directly to the player root (not a bone) at local zero — since the player's
         // root transform sits at ground level, this puts the effect at their feet and keeps it
