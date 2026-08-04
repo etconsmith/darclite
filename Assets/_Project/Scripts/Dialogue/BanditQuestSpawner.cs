@@ -19,7 +19,12 @@ namespace Darclite.Dialogue
 
         private bool _hasSpawned;
 
-        private void OnEnable()
+        // Subscribing from Start rather than OnEnable: QuestLog lives on a separate root
+        // GameObject (the HUD canvas), and Unity doesn't guarantee one object's Awake runs
+        // before another object's OnEnable — only that every object's Awake+OnEnable have
+        // finished before any Start runs. Subscribing here means QuestLog.Instance is
+        // guaranteed to already be set, instead of silently depending on GameObject order.
+        private void Start()
         {
             if (QuestLog.Instance != null)
             {
@@ -27,7 +32,7 @@ namespace Darclite.Dialogue
             }
         }
 
-        private void OnDisable()
+        private void OnDestroy()
         {
             if (QuestLog.Instance != null)
             {
