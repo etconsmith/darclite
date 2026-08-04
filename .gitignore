@@ -12,6 +12,9 @@
 /[Mm]emoryCaptures/
 /[Rr]ecordings/
 
+# Git worktrees used for isolated feature work
+/.worktrees/
+
 # Unity's auto-generated crash-recovery scene backups — not real project content.
 /Assets/_Recovery/
 /Assets/_Recovery.meta
