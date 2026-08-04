@@ -346,8 +346,6 @@ namespace Darclite.EditorTools
             Sprite glowCircleSprite = CreateGlowCircleSprite();
 
             BuildBackground(panelRoot.transform, gridSprite, vignetteSprite);
-            BuildHeaderBar(panelRoot.transform);
-            var tabBar = BuildHeaderTabBar(panelRoot.transform);
 
             GameObject statsPageContent = new GameObject("StatsPageContent", typeof(RectTransform));
             statsPageContent.transform.SetParent(panelRoot.transform, false);
@@ -370,6 +368,11 @@ namespace Darclite.EditorTools
 
             var litePage = BuildLitePageContent(panelRoot.transform);
             var abilitiesPage = BuildAbilitiesPageContent(panelRoot.transform);
+
+            // Built last so the header/tab bar are always the topmost siblings under panelRoot —
+            // no page content (however it's sized or masked) can ever render or raycast above them.
+            BuildHeaderBar(panelRoot.transform);
+            var tabBar = BuildHeaderTabBar(panelRoot.transform);
 
             panelRoot.SetActive(false);
 
@@ -474,12 +477,19 @@ namespace Darclite.EditorTools
             vignetteImage.raycastTarget = false;
         }
 
+        // Shared with BuildLitePageContent, which insets its viewport below this strip — the tab
+        // bar is an older sibling of the page contents (so it renders/raycasts behind them), and
+        // that was harmless while pages had nothing solid up there. The Lite page's drag-to-pan
+        // viewport is a full-panel raycastable Image though, so if it ever stretched this high it
+        // would both steal clicks from the tabs and let its background paint over the header.
+        private const float StatMenuHeaderHeight = 64f;
+
         // A dark, near-opaque strip behind the tab bar with a thin separator beneath it — like
         // the reference image's top bar, distinguishing the header from the page content below
         // rather than letting the tabs float directly on the navy grid background.
         private static void BuildHeaderBar(Transform parent)
         {
-            const float headerHeight = 64f;
+            const float headerHeight = StatMenuHeaderHeight;
 
             GameObject headerBackground = new GameObject("HeaderBackground", typeof(Image));
             headerBackground.transform.SetParent(parent, false);
@@ -890,33 +900,184 @@ namespace Darclite.EditorTools
                 "Channel Lite into your fist, adding extra force and a knockback to your next strike.", 0),
         };
 
+        // Column/row layout constants for the Lite tree — shared between the node-placement loop
+        // and ComputeLiteTreeContentBounds so the two never drift apart.
+        private const float LiteTreeColumnSpacing = 300f;
+        private const float LiteTreeBaseNodeY = 40f; // slightly below center — trees grow upward from here
+        private const float LiteTreeNodeHalfSize = 45f; // matches BuildTreeNode's 90x90 node size
+
+        // Deliberately much bigger than the tree actually needs today — this is the pannable
+        // "map" the tree sits inside of, sized with headroom for future trees/tiers rather than
+        // tight-fit around the current nodes.
+        private static readonly Vector2 LiteTreeBackgroundSize = new Vector2(2600f, 1700f);
+
         private static (GameObject content, Text availablePointsText) BuildLitePageContent(Transform parent)
         {
-            GameObject content = new GameObject("LitePageContent", typeof(RectTransform));
+            GameObject content = new GameObject("LitePageContent", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
             content.transform.SetParent(parent, false);
-            SceneBootstrapper.StretchRect(content.GetComponent<RectTransform>());
+            // Inset below the header strip rather than a full-panel stretch — this viewport is a
+            // raycastable, mask-clipped Image (unlike the other pages' plain RectTransforms), so
+            // if it reached up over the tab bar it would both block clicks to the other tabs and
+            // let the tree's background paint over the header.
+            RectTransform contentRect = content.GetComponent<RectTransform>();
+            contentRect.anchorMin = new Vector2(0f, 0f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.offsetMin = Vector2.zero;
+            contentRect.offsetMax = new Vector2(0f, -StatMenuHeaderHeight);
+
+            // Fully transparent — exists only so empty space (not just nodes) can be grabbed to
+            // start a drag, and so RectMask2D has a graphic to clip children against.
+            Image viewportImage = content.GetComponent<Image>();
+            viewportImage.color = new Color(0f, 0f, 0f, 0f);
+            viewportImage.raycastTarget = true;
 
             Sprite lockedBackground = CreateLockedNodeBackgroundSprite();
+
+            (Vector2 nodeBoundsMin, Vector2 nodeBoundsMax) = ComputeLiteTreeContentBounds();
+            Vector2 centroid = (nodeBoundsMin + nodeBoundsMax) * 0.5f;
+            Vector2 backgroundMin = centroid - LiteTreeBackgroundSize * 0.5f;
+            Vector2 backgroundMax = centroid + LiteTreeBackgroundSize * 0.5f;
+
+            // Everything that should pan together (background art + tree nodes) lives under this
+            // child instead of directly under the viewport — its anchoredPosition is what
+            // SkillTreePanZone actually drags around. Info panel and the points readout below are
+            // deliberately left as direct children of the viewport so they stay fixed HUD overlays.
+            GameObject treeContent = new GameObject("LiteTreeContent", typeof(RectTransform));
+            treeContent.transform.SetParent(content.transform, false);
+            SceneBootstrapper.StretchRect(treeContent.GetComponent<RectTransform>());
+
+            Sprite gridSprite = BuildLiteTreeBackground(treeContent.transform, backgroundMin, backgroundMax);
 
             AbilityInfoPanelUI infoPanel = BuildAbilityInfoPanel(content.transform, new Vector2(-60f, -110f), new Vector2(420f, 260f));
 
             int treeCount = LiteTrees.Length;
-            const float columnSpacing = 300f;
-            const float baseNodeY = 40f; // slightly below center — trees grow upward from here
-            float startX = -columnSpacing * (treeCount - 1) / 2f;
+            float startX = -LiteTreeColumnSpacing * (treeCount - 1) / 2f;
 
             for (int i = 0; i < treeCount; i++)
             {
                 var tree = LiteTrees[i];
-                float x = startX + i * columnSpacing;
-                BuildTreeChain(content.transform, tree.treeTitle, tree.tiers, x, baseNodeY, lockedBackground, infoPanel);
-                BuildTreeBranches(content.transform, tree, x, baseNodeY, lockedBackground, infoPanel);
+                float x = startX + i * LiteTreeColumnSpacing;
+                BuildTreeChain(treeContent.transform, tree.treeTitle, tree.tiers, x, LiteTreeBaseNodeY, lockedBackground, infoPanel);
+                BuildTreeBranches(treeContent.transform, tree, x, LiteTreeBaseNodeY, lockedBackground, infoPanel);
             }
 
             Text availablePointsText = BuildLiteAvailablePointsReadout(content.transform);
 
+            SkillTreePanZone panZone = content.AddComponent<SkillTreePanZone>();
+            SerializedObject panSo = new SerializedObject(panZone);
+            panSo.FindProperty("viewport").objectReferenceValue = content.GetComponent<RectTransform>();
+            panSo.FindProperty("panContent").objectReferenceValue = treeContent.GetComponent<RectTransform>();
+            panSo.FindProperty("contentMin").vector2Value = backgroundMin;
+            panSo.FindProperty("contentMax").vector2Value = backgroundMax;
+            panSo.FindProperty("trailSprite").objectReferenceValue = gridSprite;
+            panSo.FindProperty("trailSize").vector2Value = LiteTreeBackgroundSize;
+            panSo.FindProperty("trailCenterOffset").vector2Value = centroid;
+            panSo.FindProperty("trailColor").colorValue = new Color(0.55f, 0.7f, 0.95f, 1f);
+            panSo.ApplyModifiedProperties();
+
             content.SetActive(false);
             return (content, availablePointsText);
+        }
+
+        // Mirrors the same tier/branch placement math BuildTreeChain/BuildTreeBranches use, purely
+        // to find the tree's own footprint (for centering the big pan background on it) — doesn't
+        // touch the scene itself.
+        private static (Vector2 min, Vector2 max) ComputeLiteTreeContentBounds()
+        {
+            int treeCount = LiteTrees.Length;
+            float startX = -LiteTreeColumnSpacing * (treeCount - 1) / 2f;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minY = float.MaxValue, maxY = float.MinValue;
+
+            for (int i = 0; i < treeCount; i++)
+            {
+                var tree = LiteTrees[i];
+                float x = startX + i * LiteTreeColumnSpacing;
+
+                for (int tierIndex = 0; tierIndex < tree.tiers.Length; tierIndex++)
+                {
+                    float y = LiteTreeBaseNodeY + tierIndex * TreeTierSpacing;
+                    minX = Mathf.Min(minX, x - LiteTreeNodeHalfSize);
+                    maxX = Mathf.Max(maxX, x + LiteTreeNodeHalfSize);
+                    minY = Mathf.Min(minY, y - LiteTreeNodeHalfSize);
+                    maxY = Mathf.Max(maxY, y + LiteTreeNodeHalfSize);
+                }
+
+                foreach (var branch in LiteTreeBranches)
+                {
+                    if (branch.treeTitle != tree.treeTitle)
+                    {
+                        continue;
+                    }
+
+                    int prerequisiteTierIndex = Mathf.Max(0, System.Array.FindIndex(tree.tiers, t => t.abilityName == branch.prerequisiteAbilityName));
+                    float prerequisiteY = LiteTreeBaseNodeY + prerequisiteTierIndex * TreeTierSpacing;
+                    float branchX = x + BranchXOffset;
+                    float branchY = prerequisiteY + BranchYOffset;
+
+                    minX = Mathf.Min(minX, branchX - LiteTreeNodeHalfSize);
+                    maxX = Mathf.Max(maxX, branchX + LiteTreeNodeHalfSize);
+                    minY = Mathf.Min(minY, branchY - LiteTreeNodeHalfSize);
+                    maxY = Mathf.Max(maxY, branchY + LiteTreeNodeHalfSize);
+                }
+            }
+
+            return (new Vector2(minX, minY), new Vector2(maxX, maxY));
+        }
+
+        // Fill + tiled grid detail + a glowing border trim, all 9-sliced/tiled so they scale
+        // cleanly to whatever size the pan area ends up being. Same visual language as the shared
+        // panel background (navy fill, blue grid) so the tree reads as part of the same UI.
+        private static Sprite BuildLiteTreeBackground(Transform parent, Vector2 min, Vector2 max)
+        {
+            Vector2 size = max - min;
+            Vector2 center = (min + max) * 0.5f;
+            Sprite gridSprite = CreateGridPatternSprite();
+
+            GameObject fillObject = new GameObject("TreeBackgroundFill", typeof(Image));
+            fillObject.transform.SetParent(parent, false);
+            RectTransform fillRect = fillObject.GetComponent<RectTransform>();
+            fillRect.anchorMin = new Vector2(0.5f, 0.5f);
+            fillRect.anchorMax = new Vector2(0.5f, 0.5f);
+            fillRect.pivot = new Vector2(0.5f, 0.5f);
+            fillRect.anchoredPosition = center;
+            fillRect.sizeDelta = size;
+            Image fillImage = fillObject.GetComponent<Image>();
+            fillImage.sprite = SceneBootstrapper.CreateRoundedRectSprite();
+            fillImage.type = Image.Type.Sliced;
+            fillImage.color = new Color(0.04f, 0.07f, 0.13f, 0.92f);
+            fillImage.raycastTarget = false;
+
+            GameObject gridObject = new GameObject("TreeBackgroundGrid", typeof(Image));
+            gridObject.transform.SetParent(parent, false);
+            RectTransform gridRect = gridObject.GetComponent<RectTransform>();
+            gridRect.anchorMin = new Vector2(0.5f, 0.5f);
+            gridRect.anchorMax = new Vector2(0.5f, 0.5f);
+            gridRect.pivot = new Vector2(0.5f, 0.5f);
+            gridRect.anchoredPosition = center;
+            gridRect.sizeDelta = size;
+            Image gridImage = gridObject.GetComponent<Image>();
+            gridImage.sprite = gridSprite;
+            gridImage.type = Image.Type.Tiled;
+            gridImage.color = new Color(0.4f, 0.55f, 0.75f, 0.35f);
+            gridImage.raycastTarget = false;
+
+            GameObject borderObject = new GameObject("TreeBackgroundBorder", typeof(Image));
+            borderObject.transform.SetParent(parent, false);
+            RectTransform borderRect = borderObject.GetComponent<RectTransform>();
+            borderRect.anchorMin = new Vector2(0.5f, 0.5f);
+            borderRect.anchorMax = new Vector2(0.5f, 0.5f);
+            borderRect.pivot = new Vector2(0.5f, 0.5f);
+            borderRect.anchoredPosition = center;
+            borderRect.sizeDelta = size;
+            Image borderImage = borderObject.GetComponent<Image>();
+            borderImage.sprite = SceneBootstrapper.CreateHollowRoundedRectSprite();
+            borderImage.type = Image.Type.Sliced;
+            borderImage.color = new Color(1f, 0.82f, 0.35f, 0.55f);
+            borderImage.raycastTarget = false;
+
+            return gridSprite;
         }
 
         // Bottom-of-page readout for how many banked Lite points are still unspent — the same
@@ -1192,15 +1353,17 @@ namespace Darclite.EditorTools
 
             AudioClip hoverClip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{UIAudioFolder}/pop.mp3");
             AudioClip clickClip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{UIAudioFolder}/click.mp3");
-            if (hoverClip == null || clickClip == null)
+            AudioClip flipClip = AssetDatabase.LoadAssetAtPath<AudioClip>($"{UIAudioFolder}/flip.mp3");
+            if (hoverClip == null || clickClip == null || flipClip == null)
             {
-                Debug.LogWarning($"[StatMenuBootstrapper] Could not find pop.mp3/click.mp3 under {UIAudioFolder} — UI sounds will be silent.");
+                Debug.LogWarning($"[StatMenuBootstrapper] Could not find pop.mp3/click.mp3/flip.mp3 under {UIAudioFolder} — UI sounds will be silent.");
             }
 
             SerializedObject audioSo = new SerializedObject(audioPlayer);
             audioSo.FindProperty("audioSource").objectReferenceValue = audioSource;
             audioSo.FindProperty("hoverClip").objectReferenceValue = hoverClip;
             audioSo.FindProperty("clickClip").objectReferenceValue = clickClip;
+            audioSo.FindProperty("flipClip").objectReferenceValue = flipClip;
             audioSo.ApplyModifiedProperties();
         }
 

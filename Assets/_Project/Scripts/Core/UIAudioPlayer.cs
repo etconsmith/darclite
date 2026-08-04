@@ -13,6 +13,7 @@ namespace Darclite.Core
         [SerializeField] private AudioSource audioSource;
         [SerializeField] private AudioClip hoverClip;
         [SerializeField] private AudioClip clickClip;
+        [SerializeField] private AudioClip flipClip;
 
         private void Awake()
         {
@@ -40,6 +41,15 @@ namespace Darclite.Core
             if (Instance != null && Instance.audioSource != null && Instance.clickClip != null)
             {
                 Instance.audioSource.PlayOneShot(Instance.clickClip);
+            }
+        }
+
+        // Page turn — fires whenever the Stat Menu switches between Stats/Lite/Abilities.
+        public static void PlayFlip()
+        {
+            if (Instance != null && Instance.audioSource != null && Instance.flipClip != null)
+            {
+                Instance.audioSource.PlayOneShot(Instance.flipClip);
             }
         }
     }
