@@ -1341,6 +1341,8 @@ namespace Darclite.EditorTools
             borderImage.color = new Color(1f, 0.92f, 0.6f, 1f);
             borderImage.raycastTarget = false;
 
+            BuildToggleOutlineRing(visualObject.transform, ringSprite, 66f, tier.abilityName);
+
             if (showTitle)
             {
                 GameObject titleObject = new GameObject("TreeTitle", typeof(Text));
@@ -1481,6 +1483,46 @@ namespace Darclite.EditorTools
             separatorImage.color = new Color(1f, 1f, 1f, 0.2f);
             separatorImage.raycastTarget = false;
 
+            // Only the Abilities page's panel (includeCenterIcon) needs this — the Lite tree's
+            // hover tooltip never shows an ability that could be toggled from here. Sits in the
+            // gap between the separator and the centered icon below; AbilityInfoPanelUI.Show()
+            // shows/hides it per-ability based on whether that ability is a toggle type.
+            GameObject toggleButtonObject = null;
+            Text toggleButtonText = null;
+            if (includeCenterIcon)
+            {
+                const float toggleButtonWidth = 180f;
+                const float toggleButtonHeight = 36f;
+
+                toggleButtonObject = new GameObject("ToggleButton", typeof(Image), typeof(Button));
+                toggleButtonObject.transform.SetParent(panelObject.transform, false);
+                RectTransform toggleButtonRect = toggleButtonObject.GetComponent<RectTransform>();
+                toggleButtonRect.anchorMin = new Vector2(0.5f, 1f);
+                toggleButtonRect.anchorMax = new Vector2(0.5f, 1f);
+                toggleButtonRect.pivot = new Vector2(0.5f, 1f);
+                toggleButtonRect.anchoredPosition = new Vector2(0f, -(panelPadding + 34f + 12f));
+                toggleButtonRect.sizeDelta = new Vector2(toggleButtonWidth, toggleButtonHeight);
+                Image toggleButtonImage = toggleButtonObject.GetComponent<Image>();
+                toggleButtonImage.sprite = roundedRect;
+                toggleButtonImage.type = Image.Type.Sliced;
+                toggleButtonImage.color = new Color(0.55f, 0.45f, 0.12f, 0.9f);
+
+                GameObject toggleButtonTextObject = new GameObject("Text", typeof(Text));
+                toggleButtonTextObject.transform.SetParent(toggleButtonObject.transform, false);
+                SceneBootstrapper.StretchRect(toggleButtonTextObject.GetComponent<RectTransform>());
+                toggleButtonText = toggleButtonTextObject.GetComponent<Text>();
+                toggleButtonText.font = SceneBootstrapper.GetGameFont();
+                toggleButtonText.fontSize = 15;
+                toggleButtonText.fontStyle = FontStyle.Bold;
+                toggleButtonText.color = Color.white;
+                toggleButtonText.alignment = TextAnchor.MiddleCenter;
+                toggleButtonText.text = "Toggle On";
+                toggleButtonText.raycastTarget = false;
+
+                Button toggleButton = toggleButtonObject.GetComponent<Button>();
+                toggleButton.targetGraphic = toggleButtonImage;
+            }
+
             // Dead center of the WHOLE panel, not just the space below the separator — reserves
             // its own band so the description (built next) starts below it instead of overlapping.
             Image selectedIconImage = null;
@@ -1553,6 +1595,9 @@ namespace Darclite.EditorTools
             infoPanelSo.FindProperty("treeLabelText").objectReferenceValue = treeLabelText;
             infoPanelSo.FindProperty("costText").objectReferenceValue = costText;
             infoPanelSo.FindProperty("selectedIconImage").objectReferenceValue = selectedIconImage;
+            infoPanelSo.FindProperty("toggleButtonRoot").objectReferenceValue = toggleButtonObject;
+            infoPanelSo.FindProperty("toggleButton").objectReferenceValue = toggleButtonObject != null ? toggleButtonObject.GetComponent<Button>() : null;
+            infoPanelSo.FindProperty("toggleButtonText").objectReferenceValue = toggleButtonText;
             infoPanelSo.ApplyModifiedProperties();
 
             return infoPanelUI;
@@ -1998,6 +2043,8 @@ namespace Darclite.EditorTools
             borderImage.color = new Color(1f, 0.92f, 0.6f, 1f);
             borderImage.raycastTarget = false;
 
+            BuildToggleOutlineRing(visualObject.transform, ringSprite, size * 0.78f, ability.abilityName);
+
             AbilityIconUI iconUI = backgroundObject.AddComponent<AbilityIconUI>();
             SerializedObject nodeSo = new SerializedObject(iconUI);
             nodeSo.FindProperty("nodeRoot").objectReferenceValue = nodeRect;
@@ -2012,6 +2059,31 @@ namespace Darclite.EditorTools
             nodeSo.ApplyModifiedProperties();
 
             return iconUI;
+        }
+
+        private static readonly Color ToggleAbilityOutlineColor = new Color(0.4f, 0.85f, 0.45f, 1f);
+
+        // A slim ring hugging the icon itself (smaller than the hover border) marking an ability
+        // as a toggle type — always visible, independent of hover/selection, so it reads as a
+        // permanent trait of the ability rather than transient feedback. Whether it's shown is
+        // decided once here at build time (a toggle ability never stops being one), not re-checked
+        // at runtime.
+        private static void BuildToggleOutlineRing(Transform visualParent, Sprite ringSprite, float size, string abilityName)
+        {
+            GameObject toggleOutlineObject = new GameObject("ToggleOutline", typeof(Image));
+            toggleOutlineObject.transform.SetParent(visualParent, false);
+            RectTransform toggleOutlineRect = toggleOutlineObject.GetComponent<RectTransform>();
+            toggleOutlineRect.anchorMin = new Vector2(0.5f, 0.5f);
+            toggleOutlineRect.anchorMax = new Vector2(0.5f, 0.5f);
+            toggleOutlineRect.pivot = new Vector2(0.5f, 0.5f);
+            toggleOutlineRect.anchoredPosition = Vector2.zero;
+            toggleOutlineRect.sizeDelta = new Vector2(size, size);
+            Image toggleOutlineImage = toggleOutlineObject.GetComponent<Image>();
+            toggleOutlineImage.sprite = ringSprite;
+            toggleOutlineImage.type = Image.Type.Simple;
+            toggleOutlineImage.color = ToggleAbilityOutlineColor;
+            toggleOutlineImage.raycastTarget = false;
+            toggleOutlineObject.SetActive(AbilityLoadout.IsToggleAbility(abilityName));
         }
 
         // Layers two soft Outline effects behind a Text to fake a gentle neon glow without a

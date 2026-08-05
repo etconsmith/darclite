@@ -17,6 +17,14 @@ namespace Darclite.Core
         // Optional — only wired on pages that also show a big "currently selected ability" icon
         // elsewhere on screen (e.g. the Abilities page); left unset, this is simply skipped.
         [SerializeField] private Image selectedIconImage;
+        // Optional — only wired on the Abilities page's panel. Shown only when the currently
+        // displayed ability is a toggle type (Power Sense 1, Attack Sensing I, ...), since those
+        // can't be equipped and this button is their only way to switch on/off.
+        [SerializeField] private GameObject toggleButtonRoot;
+        [SerializeField] private Button toggleButton;
+        [SerializeField] private Text toggleButtonText;
+
+        private string _currentAbilityName;
 
         private void Awake()
         {
@@ -24,10 +32,27 @@ namespace Darclite.Core
             {
                 panelRoot.SetActive(false);
             }
+
+            if (toggleButton != null)
+            {
+                toggleButton.onClick.AddListener(HandleToggleButtonClicked);
+            }
+        }
+
+        private void OnEnable()
+        {
+            AbilityLoadout.ToggleChanged += HandleToggleChanged;
+        }
+
+        private void OnDisable()
+        {
+            AbilityLoadout.ToggleChanged -= HandleToggleChanged;
         }
 
         public void Show(string abilityName, string description, string treeTitle, int cost, Sprite icon = null)
         {
+            _currentAbilityName = abilityName;
+
             if (titleText != null)
             {
                 titleText.text = abilityName;
@@ -49,6 +74,17 @@ namespace Darclite.Core
                 selectedIconImage.sprite = icon;
                 selectedIconImage.enabled = icon != null;
             }
+
+            if (toggleButtonRoot != null)
+            {
+                bool isToggle = AbilityLoadout.IsToggleAbility(abilityName);
+                toggleButtonRoot.SetActive(isToggle);
+                if (isToggle)
+                {
+                    RefreshToggleButtonText();
+                }
+            }
+
             if (panelRoot != null)
             {
                 panelRoot.SetActive(true);
@@ -61,6 +97,36 @@ namespace Darclite.Core
             {
                 panelRoot.SetActive(false);
             }
+        }
+
+        private void HandleToggleButtonClicked()
+        {
+            if (_currentAbilityName == null)
+            {
+                return;
+            }
+
+            AbilityLoadout.ToggleAbility(_currentAbilityName);
+        }
+
+        private void HandleToggleChanged(string abilityName, bool isOn)
+        {
+            if (abilityName != _currentAbilityName)
+            {
+                return;
+            }
+
+            RefreshToggleButtonText();
+        }
+
+        private void RefreshToggleButtonText()
+        {
+            if (toggleButtonText == null || _currentAbilityName == null)
+            {
+                return;
+            }
+
+            toggleButtonText.text = AbilityLoadout.GetToggleState(_currentAbilityName) ? "Toggle Off" : "Toggle On";
         }
     }
 }

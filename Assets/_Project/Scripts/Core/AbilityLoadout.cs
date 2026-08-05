@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Darclite.Core
@@ -17,6 +18,43 @@ namespace Darclite.Core
         public static event Action<int, Sprite> SlotChanged;
         // Fired when a slot's ability is actually cast (key pressed, off cooldown) — not on equip.
         public static event Action<int> Activated;
+
+        // Toggle-type abilities (Power Sense 1, Attack Sensing I, ...) skip the hotbar entirely —
+        // they can't be equipped to a slot at all, and are switched on/off exclusively via the
+        // toggle button on their info panel in the Abilities page. Their on/off state lives here,
+        // keyed by ability name, so any number of listeners (an enemy's health bar, a player buff,
+        // the info panel's own button label) can stay in sync without a slot index to key off of.
+        private static readonly HashSet<string> ToggleAbilityNames = new HashSet<string>
+        {
+            "Power Sense 1",
+            "Attack Sensing I",
+        };
+
+        private static readonly Dictionary<string, bool> _toggleStates = new Dictionary<string, bool>();
+
+        public static event Action<string, bool> ToggleChanged;
+
+        public static bool IsToggleAbility(string abilityName)
+        {
+            return abilityName != null && ToggleAbilityNames.Contains(abilityName);
+        }
+
+        public static bool GetToggleState(string abilityName)
+        {
+            return abilityName != null && _toggleStates.TryGetValue(abilityName, out bool isOn) && isOn;
+        }
+
+        public static void ToggleAbility(string abilityName)
+        {
+            if (abilityName == null)
+            {
+                return;
+            }
+
+            bool isOn = !GetToggleState(abilityName);
+            _toggleStates[abilityName] = isOn;
+            ToggleChanged?.Invoke(abilityName, isOn);
+        }
 
         public static Sprite GetSlot(int index)
         {

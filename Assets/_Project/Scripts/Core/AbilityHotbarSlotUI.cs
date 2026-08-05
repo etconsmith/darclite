@@ -41,6 +41,15 @@ namespace Darclite.Core
                 return;
             }
 
+            // AbilityIconUI's own drag handlers already no-op for toggle abilities (the icon never
+            // visually moves), but Unity's EventSystem still treats it as "the dragged object" and
+            // delivers this drop regardless — so it has to be rejected here too, not just at the
+            // source.
+            if (AbilityLoadout.IsToggleAbility(dragged.AbilityName))
+            {
+                return;
+            }
+
             dragged.NotifyHandledByDrop();
             AbilitiesPageUI.Instance?.HandleDrop(dragged, this);
         }

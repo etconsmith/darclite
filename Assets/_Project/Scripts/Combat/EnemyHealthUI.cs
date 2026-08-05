@@ -6,10 +6,11 @@ using UnityEngine.UI;
 namespace Darclite.Combat
 {
     // Same bar visual/feedback as PlayerHealthUI (fill + delayed damage trail + hit punch), but
-    // world-space above the enemy's head and hidden by default — each press of the player's Power
-    // Sense hotbar slot toggles it on/off, matching the ability's "revealing their health above
-    // their heads" description. Health tracking itself keeps running underneath while hidden, so
-    // the bar is already showing the correct value whenever it's revealed.
+    // world-space above the enemy's head and hidden by default — toggling the player's Power
+    // Sense ability (via its Abilities-page info panel button) reveals/hides it, matching the
+    // ability's "revealing their health above their heads" description. Health tracking itself
+    // keeps running underneath while hidden, so the bar is already showing the correct value
+    // whenever it's revealed.
     [AddComponentMenu("Darclite/Enemy Health UI")]
     public class EnemyHealthUI : MonoBehaviour
     {
@@ -70,7 +71,15 @@ namespace Darclite.Combat
             {
                 combatant.HealthChanged += UpdateHealth;
             }
-            AbilityLoadout.Activated += HandleActivated;
+            AbilityLoadout.ToggleChanged += HandleToggleChanged;
+
+            // Sync immediately in case Power Sense was already toggled on before this enemy
+            // spawned in (e.g. it respawned while the ability was already active).
+            _revealed = AbilityLoadout.GetToggleState(AbilityName);
+            if (_canvas != null)
+            {
+                _canvas.enabled = _revealed;
+            }
         }
 
         private void Start()
@@ -92,7 +101,7 @@ namespace Darclite.Combat
             {
                 combatant.HealthChanged -= UpdateHealth;
             }
-            AbilityLoadout.Activated -= HandleActivated;
+            AbilityLoadout.ToggleChanged -= HandleToggleChanged;
         }
 
         private void LateUpdate()
@@ -108,14 +117,14 @@ namespace Darclite.Combat
             }
         }
 
-        private void HandleActivated(int slotIndex)
+        private void HandleToggleChanged(string abilityName, bool isOn)
         {
-            if (AbilityLoadout.GetAbilityName(slotIndex) != AbilityName)
+            if (abilityName != AbilityName)
             {
                 return;
             }
 
-            _revealed = !_revealed;
+            _revealed = isOn;
             if (_canvas != null)
             {
                 _canvas.enabled = _revealed;

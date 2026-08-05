@@ -143,6 +143,15 @@ namespace Darclite.Core
 
         public void OnBeginDrag(PointerEventData eventData)
         {
+            // Toggle abilities (Power Sense 1, Attack Sensing I, ...) can't be equipped at all —
+            // they're switched on/off exclusively via the toggle button on their info panel, so
+            // simply never start a drag for them. Bailing here (rather than in OnDrag/OnEndDrag)
+            // means nodeRoot never reparents or moves, so the icon just doesn't budge at all.
+            if (AbilityLoadout.IsToggleAbility(abilityName))
+            {
+                return;
+            }
+
             _handledByDrop = false;
 
             if (_background != null)
@@ -161,12 +170,22 @@ namespace Darclite.Core
 
         public void OnDrag(PointerEventData eventData)
         {
+            if (AbilityLoadout.IsToggleAbility(abilityName))
+            {
+                return;
+            }
+
             // Screen Space Overlay canvas — screen point and world point coincide.
             nodeRoot.position = eventData.position;
         }
 
         public void OnEndDrag(PointerEventData eventData)
         {
+            if (AbilityLoadout.IsToggleAbility(abilityName))
+            {
+                return;
+            }
+
             if (_background != null)
             {
                 _background.raycastTarget = true;
