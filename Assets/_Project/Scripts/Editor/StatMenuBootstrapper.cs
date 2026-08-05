@@ -898,6 +898,11 @@ namespace Darclite.EditorTools
                 "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
             ("Attack", "Lite Concentration II", "Forceful Strike", "Forceful Strike",
                 "Channel Lite into your fist, adding extra force and a knockback to your next strike.", 0),
+            // Branches off Lite Release specifically — which is itself a branch, not a tier — so
+            // this must come after it in the array (ResolveBranchPrerequisitePosition only knows
+            // about branches already processed for the same tree).
+            ("Attack", "Lite Release", "Lite Burst I", "Lite Burst",
+                "Fire a wide burst of Lite energy in a cone in front of you, damaging and knocking back everyone it catches.", 0),
             ("Sense", "Power Sense 1", "Attack Sensing I", "Attack Sensing 1",
                 "Heighten your senses — your dodge window lasts 50% longer, and you can cancel a punch or ability into a dodge instead.", 0),
         };
@@ -1002,6 +1007,8 @@ namespace Darclite.EditorTools
                     maxY = Mathf.Max(maxY, y + LiteTreeNodeHalfSize);
                 }
 
+                var branchPositions = new System.Collections.Generic.Dictionary<string, Vector2>();
+
                 foreach (var branch in LiteTreeBranches)
                 {
                     if (branch.treeTitle != tree.treeTitle)
@@ -1009,15 +1016,17 @@ namespace Darclite.EditorTools
                         continue;
                     }
 
-                    int prerequisiteTierIndex = Mathf.Max(0, System.Array.FindIndex(tree.tiers, t => t.abilityName == branch.prerequisiteAbilityName));
-                    float prerequisiteY = LiteTreeBaseNodeY + prerequisiteTierIndex * TreeTierSpacing;
-                    float branchX = x + BranchXOffset;
-                    float branchY = prerequisiteY + BranchYOffset;
+                    Vector2 prerequisitePosition = ResolveBranchPrerequisitePosition(
+                        tree, branch.prerequisiteAbilityName, x, LiteTreeBaseNodeY, branchPositions);
+                    float branchX = prerequisitePosition.x + BranchXOffset;
+                    float branchY = prerequisitePosition.y + BranchYOffset;
 
                     minX = Mathf.Min(minX, branchX - LiteTreeNodeHalfSize);
                     maxX = Mathf.Max(maxX, branchX + LiteTreeNodeHalfSize);
                     minY = Mathf.Min(minY, branchY - LiteTreeNodeHalfSize);
                     maxY = Mathf.Max(maxY, branchY + LiteTreeNodeHalfSize);
+
+                    branchPositions[branch.abilityName] = new Vector2(branchX, branchY);
                 }
             }
 
@@ -1200,9 +1209,14 @@ namespace Darclite.EditorTools
 
         // Draws any branch nodes hanging off this tree's chain — same clickable node as a normal
         // tier, just positioned diagonally off its prerequisite instead of stacking above it,
-        // since unlocking it doesn't continue (or get superseded by) that chain.
+        // since unlocking it doesn't continue (or get superseded by) that chain. A branch's
+        // prerequisite is usually a tier, but doesn't have to be — Lite Burst I branches off Lite
+        // Release, which is itself a branch — so this tracks each branch's resolved position as it
+        // goes, letting a later branch in the array chain off an earlier one in the same tree.
         private static void BuildTreeBranches(Transform parent, (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers) tree, float x, float baseY, Sprite lockedBackground, AbilityInfoPanelUI infoPanel)
         {
+            var branchPositions = new System.Collections.Generic.Dictionary<string, Vector2>();
+
             foreach (var branch in LiteTreeBranches)
             {
                 if (branch.treeTitle != tree.treeTitle)
@@ -1210,15 +1224,40 @@ namespace Darclite.EditorTools
                     continue;
                 }
 
-                int prerequisiteTierIndex = Mathf.Max(0, System.Array.FindIndex(tree.tiers, t => t.abilityName == branch.prerequisiteAbilityName));
-                float prerequisiteY = baseY + prerequisiteTierIndex * TreeTierSpacing;
-                float branchX = x + BranchXOffset;
-                float branchY = prerequisiteY + BranchYOffset;
+                Vector2 prerequisitePosition = ResolveBranchPrerequisitePosition(
+                    tree, branch.prerequisiteAbilityName, x, baseY, branchPositions);
+                float branchX = prerequisitePosition.x + BranchXOffset;
+                float branchY = prerequisitePosition.y + BranchYOffset;
 
-                BuildTreeConnectorLineBetween(parent, new Vector2(x, prerequisiteY), new Vector2(branchX, branchY));
+                BuildTreeConnectorLineBetween(parent, prerequisitePosition, new Vector2(branchX, branchY));
                 BuildTreeNode(parent, tree.treeTitle, (branch.abilityName, branch.iconFileName, branch.description, branch.cost),
                     branch.prerequisiteAbilityName, branchX, branchY, lockedBackground, infoPanel, showTitle: false);
+
+                branchPositions[branch.abilityName] = new Vector2(branchX, branchY);
             }
+        }
+
+        // Looks up where a branch's prerequisite actually ended up: a tier first (the common
+        // case), then an earlier branch already built for this same tree (branchPositions is
+        // populated by BuildTreeBranches/ComputeLiteTreeContentBounds as they go), falling back to
+        // the tree's own base position only if neither matches.
+        private static Vector2 ResolveBranchPrerequisitePosition(
+            (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers) tree,
+            string prerequisiteAbilityName, float x, float baseY,
+            System.Collections.Generic.Dictionary<string, Vector2> branchPositions)
+        {
+            int prerequisiteTierIndex = System.Array.FindIndex(tree.tiers, t => t.abilityName == prerequisiteAbilityName);
+            if (prerequisiteTierIndex >= 0)
+            {
+                return new Vector2(x, baseY + prerequisiteTierIndex * TreeTierSpacing);
+            }
+
+            if (branchPositions.TryGetValue(prerequisiteAbilityName, out Vector2 branchPosition))
+            {
+                return branchPosition;
+            }
+
+            return new Vector2(x, baseY);
         }
 
         private static void BuildTreeNode(Transform parent, string treeTitle, (string abilityName, string iconFileName, string description, int cost) tier, string prerequisiteAbilityName, float x, float y, Sprite lockedBackground, AbilityInfoPanelUI infoPanel, bool showTitle)

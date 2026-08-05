@@ -307,6 +307,7 @@ namespace Darclite.EditorTools
             SetupLiteReleaseAbility(player, animator);
             SetupForcefulStrikeAbility(player, animator);
             SetupAttackSensingAbility(player);
+            SetupLiteBurstAbility(player, animator);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -804,6 +805,69 @@ namespace Darclite.EditorTools
 
             Debug.LogWarning($"[SceneBootstrapper] Could not find Lite animation clip at {path}");
             return 0f;
+        }
+
+        // ==================== Lite Burst Ability ====================
+
+        private const string LiteBurstVfxAssetPath = "Assets/_Project/VFX/Lite Burst.vfx";
+
+        // Parented directly to the player root at local zero — position and rotation are both set
+        // fresh on every cast (LiteBurstAbility orients it along the caster's current forward), so
+        // its resting transform here doesn't matter beyond keeping it out from underfoot.
+        private static void SetupLiteBurstAbility(GameObject player, Animator animator)
+        {
+            // Force a fresh import so CharacterModelPostprocessor's Lite Animations handling
+            // actually applies even if this clip was already imported once before that folder was
+            // recognized.
+            AssetDatabase.ImportAsset($"{LiteAnimationsFolder}/Lite Burst.fbx", ImportAssetOptions.ForceUpdate);
+
+            VisualEffectAsset burstVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteBurstVfxAssetPath);
+            if (burstVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Burst VFX asset at {LiteBurstVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "LiteBurstVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("LiteBurstVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+            vfxObject.transform.localScale = Vector3.one;
+
+            VisualEffect burstVfx = null;
+            if (burstVfxAsset != null)
+            {
+                burstVfx = vfxObject.GetComponent<VisualEffect>();
+                burstVfx.visualEffectAsset = burstVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "LiteBurstAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("LiteBurstAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip burstClip = LoadAudioClip(LiteAudioFolder, "Lite Burst");
+
+            float castDuration = GetLiteAnimationClipLength("Lite Burst");
+
+            LiteBurstAbility abilityController = player.GetComponent<LiteBurstAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteBurstAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("animator").objectReferenceValue = animator;
+            abilitySo.FindProperty("burstVfx").objectReferenceValue = burstVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("burstClip").objectReferenceValue = burstClip;
+            if (castDuration > 0f)
+            {
+                abilitySo.FindProperty("castDuration").floatValue = castDuration;
+            }
+            abilitySo.ApplyModifiedProperties();
         }
 
         // ==================== Forceful Strike Ability ====================

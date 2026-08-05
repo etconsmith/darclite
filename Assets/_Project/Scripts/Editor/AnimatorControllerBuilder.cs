@@ -53,6 +53,7 @@ namespace Darclite.EditorTools
             controller.AddParameter("Death", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("DeathIndex", AnimatorControllerParameterType.Float);
             controller.AddParameter("LiteRelease", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("LiteBurst", AnimatorControllerParameterType.Trigger);
 
             AnimationClip idle = LoadClip("Idle");
             AnimationClip walk = LoadClip("Walk");
@@ -92,6 +93,7 @@ namespace Darclite.EditorTools
             AnimationClip death2 = LoadClip(FightClipsFolder, "Death2");
             AnimationClip death3 = LoadClip(FightClipsFolder, "Death3");
             AnimationClip liteRelease = LoadClip(LiteClipsFolder, "Lite Release");
+            AnimationClip liteBurst = LoadClip(LiteClipsFolder, "Lite Burst");
 
             AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
@@ -303,6 +305,20 @@ namespace Darclite.EditorTools
             liteReleaseToLocomotion.hasExitTime = true;
             liteReleaseToLocomotion.exitTime = 0.92f;
             liteReleaseToLocomotion.duration = 0.1f;
+
+            AnimatorState liteBurstState = stateMachine.AddState("Lite Burst");
+            liteBurstState.motion = liteBurst;
+
+            AnimatorStateTransition toLiteBurst = stateMachine.AddAnyStateTransition(liteBurstState);
+            toLiteBurst.hasExitTime = false;
+            toLiteBurst.duration = 0.05f;
+            toLiteBurst.canTransitionToSelf = false;
+            toLiteBurst.AddCondition(AnimatorConditionMode.If, 0, "LiteBurst");
+
+            AnimatorStateTransition liteBurstToLocomotion = liteBurstState.AddTransition(locomotionState);
+            liteBurstToLocomotion.hasExitTime = true;
+            liteBurstToLocomotion.exitTime = 0.92f;
+            liteBurstToLocomotion.duration = 0.1f;
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
