@@ -26,9 +26,12 @@ namespace Darclite.Player
 
         [Header("Burst")]
         [SerializeField] private int burstDamage = 15;
-        [SerializeField] private float burstRange = 9f;
+        [SerializeField] private float burstRange = 13.5f;
         // Half-angle either side of forward — this doubled is the full cone width.
-        [SerializeField] private float burstHalfAngle = 50f;
+        [SerializeField] private float burstHalfAngle = 25f;
+        // How far in front of castAnchor (the hand) the burst actually originates — keeps the VFX
+        // from spawning inside the hand model itself.
+        [SerializeField] private float castForwardOffset = 0.3f;
 
         [Header("Timing")]
         // Real length of the Lite Burst cast clip, in seconds — populated by SceneBootstrapper
@@ -42,6 +45,8 @@ namespace Darclite.Player
         [SerializeField] private VisualEffect burstVfx;
         [SerializeField] private AudioSource audioSource;
         [SerializeField] private AudioClip burstClip;
+        // The hand bone the burst originates from — falls back to the player root if unset.
+        [SerializeField] private Transform castAnchor;
 
         // Long enough for the burst to fully finish spawning, but well under the interval a
         // misconfigured Spawn context might re-trigger itself on — guards against the effect
@@ -121,8 +126,9 @@ namespace Darclite.Player
                 yield break;
             }
 
-            Vector3 origin = transform.position;
             Vector3 forward = transform.forward;
+            Vector3 anchorPosition = castAnchor != null ? castAnchor.position : transform.position;
+            Vector3 origin = anchorPosition + forward * castForwardOffset;
 
             if (burstVfx != null)
             {

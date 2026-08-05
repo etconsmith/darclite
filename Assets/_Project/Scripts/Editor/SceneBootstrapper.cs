@@ -852,6 +852,10 @@ namespace Darclite.EditorTools
 
             float castDuration = GetLiteAnimationClipLength("Lite Burst");
 
+            // Burst originates from the hand rather than the feet — falls back to the player root
+            // via LiteBurstAbility itself if this bone can't be resolved (e.g. non-humanoid rig).
+            Transform castAnchor = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+
             LiteBurstAbility abilityController = player.GetComponent<LiteBurstAbility>();
             if (abilityController == null)
             {
@@ -863,6 +867,9 @@ namespace Darclite.EditorTools
             abilitySo.FindProperty("burstVfx").objectReferenceValue = burstVfx;
             abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
             abilitySo.FindProperty("burstClip").objectReferenceValue = burstClip;
+            abilitySo.FindProperty("castAnchor").objectReferenceValue = castAnchor;
+            abilitySo.FindProperty("burstRange").floatValue = 13.5f;
+            abilitySo.FindProperty("burstHalfAngle").floatValue = 25f;
             if (castDuration > 0f)
             {
                 abilitySo.FindProperty("castDuration").floatValue = castDuration;
