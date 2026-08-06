@@ -1,3 +1,4 @@
+using Darclite.Player;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -29,6 +30,9 @@ namespace Darclite.CameraSystem
         private float _shakeTimer;
         private float _shakeDuration;
         private float _shakeMagnitude;
+        // Null if target isn't set yet or doesn't have the ability (e.g. no player assigned) —
+        // guarded at every use below.
+        private SteadyFocusAbility _steadyFocusAbility;
 
         public float Yaw => _yaw;
 
@@ -38,6 +42,11 @@ namespace Darclite.CameraSystem
 
         public void Shake(float duration, float magnitude)
         {
+            if (_steadyFocusAbility != null && _steadyFocusAbility.IsActive)
+            {
+                magnitude *= 1f - SteadyFocusAbility.ShakeReductionFraction;
+            }
+
             _shakeDuration = Mathf.Max(duration, 0.01f);
             _shakeTimer = _shakeDuration;
             _shakeMagnitude = magnitude;
@@ -49,6 +58,11 @@ namespace Darclite.CameraSystem
             Vector3 angles = transform.eulerAngles;
             _yaw = angles.y;
             _pitch = angles.x;
+
+            if (target != null)
+            {
+                _steadyFocusAbility = target.GetComponent<SteadyFocusAbility>();
+            }
         }
 
         private void LateUpdate()

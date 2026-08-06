@@ -54,6 +54,7 @@ namespace Darclite.EditorTools
             controller.AddParameter("DeathIndex", AnimatorControllerParameterType.Float);
             controller.AddParameter("LiteRelease", AnimatorControllerParameterType.Trigger);
             controller.AddParameter("LiteBurst", AnimatorControllerParameterType.Trigger);
+            controller.AddParameter("LiteFlicker", AnimatorControllerParameterType.Trigger);
 
             AnimationClip idle = LoadClip("Idle");
             AnimationClip walk = LoadClip("Walk");
@@ -94,6 +95,7 @@ namespace Darclite.EditorTools
             AnimationClip death3 = LoadClip(FightClipsFolder, "Death3");
             AnimationClip liteRelease = LoadClip(LiteClipsFolder, "Lite Release");
             AnimationClip liteBurst = LoadClip(LiteClipsFolder, "Lite Burst");
+            AnimationClip liteFlicker = LoadClip(LiteClipsFolder, "Lite Flicker");
 
             AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
@@ -319,6 +321,20 @@ namespace Darclite.EditorTools
             liteBurstToLocomotion.hasExitTime = true;
             liteBurstToLocomotion.exitTime = 0.92f;
             liteBurstToLocomotion.duration = 0.1f;
+
+            AnimatorState liteFlickerState = stateMachine.AddState("Lite Flicker");
+            liteFlickerState.motion = liteFlicker;
+
+            AnimatorStateTransition toLiteFlicker = stateMachine.AddAnyStateTransition(liteFlickerState);
+            toLiteFlicker.hasExitTime = false;
+            toLiteFlicker.duration = 0.05f;
+            toLiteFlicker.canTransitionToSelf = false;
+            toLiteFlicker.AddCondition(AnimatorConditionMode.If, 0, "LiteFlicker");
+
+            AnimatorStateTransition liteFlickerToLocomotion = liteFlickerState.AddTransition(locomotionState);
+            liteFlickerToLocomotion.hasExitTime = true;
+            liteFlickerToLocomotion.exitTime = 0.92f;
+            liteFlickerToLocomotion.duration = 0.1f;
 
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();

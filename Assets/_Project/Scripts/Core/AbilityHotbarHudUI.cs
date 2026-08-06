@@ -25,6 +25,9 @@ namespace Darclite.Core
             ("Lite Release", 30f),
             ("Forceful Strike", 30f),
             ("Lite Burst I", 30f),
+            ("Lite Flicker", 15f),
+            ("Lite Sip", 40f),
+            ("Second Wind", 40f),
             // A pure on/off toggle — the default 40s would make flipping it back off feel
             // unreasonably sluggish. Long enough to prevent same-frame double-toggle weirdness.
             ("Attack Sensing I", 1f),
@@ -45,8 +48,13 @@ namespace Darclite.Core
         private readonly float[] _cooldownDuration = new float[AbilityLoadout.SlotCount];
         private Coroutine[] _deniedFeedbackCoroutines;
 
+        // Lets an ability (Second Wind) reach in and force every equipped slot onto cooldown —
+        // everything else about this HUD is otherwise only ever read from via AbilityLoadout.
+        public static AbilityHotbarHudUI Instance { get; private set; }
+
         private void Awake()
         {
+            Instance = this;
             _deniedFeedbackCoroutines = new Coroutine[AbilityLoadout.SlotCount];
         }
 
@@ -62,6 +70,29 @@ namespace Darclite.Core
         private void OnDisable()
         {
             AbilityLoadout.SlotChanged -= HandleSlotChanged;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Instance = null;
+            }
+        }
+
+        // Called by Second Wind — forces every currently-equipped ability onto its own cooldown,
+        // mirroring exactly what TryActivate would do for each slot individually.
+        public void StartCooldownForAllSlots()
+        {
+            for (int i = 0; i < AbilityLoadout.SlotCount; i++)
+            {
+                if (AbilityLoadout.GetSlot(i) == null)
+                {
+                    continue;
+                }
+
+                StartCooldown(i, GetCooldownForSlot(i));
+            }
         }
 
         private void Update()

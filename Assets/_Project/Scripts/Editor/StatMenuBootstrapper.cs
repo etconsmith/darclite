@@ -861,10 +861,17 @@ namespace Darclite.EditorTools
         // replaces that earlier tier everywhere (Lite page node, Abilities page icon, hotbar)
         // rather than sitting alongside it. All costs are 0 for now — no points-spending economy
         // exists yet, so unlocking only checks the prerequisite chain.
+        //
+        // Toggle-type tiers (Lite Spark) are the one exception to "replaces that earlier tier
+        // everywhere" — BuildCategoryBox skips wiring supersededByAbilityName for them, since a
+        // toggle can never be equipped in the first place and should never disappear from the
+        // Abilities page (that page's info panel is the only place its Toggle On/Off button lives).
         private static readonly (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers)[] LiteTrees =
         {
             ("Attack", new[]
             {
+                ("Lite Spark", "Lite Spark",
+                    "A faint, ever-present hum of Lite in your fists — a small, permanent boost to your attack damage while toggled on.", 0),
                 ("Lite Concentration", "Lite Concentration",
                     "Focus your Lite into every strike, increasing the power of your attacks.", 0),
                 ("Lite Concentration II", "Lite Concentration",
@@ -877,8 +884,8 @@ namespace Darclite.EditorTools
             }),
             ("Defense", new[]
             {
-                ("Lite Bracing", "Lite Bracing",
-                    "Brace yourself with Lite, reducing incoming damage.", 0),
+                ("Lite Skin", "Lite Skin",
+                    "A faint hardening of Lite just beneath your skin — a small, permanent reduction to incoming damage while toggled on.", 0),
             }),
             ("Restoration", new[]
             {
@@ -894,10 +901,17 @@ namespace Darclite.EditorTools
         // stays available whether or not the player has since upgraded to Lite Concentration II.
         private static readonly (string treeTitle, string prerequisiteAbilityName, string abilityName, string iconFileName, string description, int cost)[] LiteTreeBranches =
         {
-            ("Attack", "Lite Concentration", "Lite Release", "Lite Release",
-                "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
             ("Attack", "Lite Concentration II", "Forceful Strike", "Forceful Strike",
                 "Channel Lite into your fist, adding extra force and a knockback to your next strike.", 0),
+            // Branches off Lite Spark (a tier, not a branch) — starts the Lite Release/Lite Burst
+            // chain instead of Lite Concentration now that Lite Spark exists.
+            ("Attack", "Lite Spark", "Lite Flicker", "Lite Flicker",
+                "A quick, narrow flick of Lite energy — barely more than a spark given a direction.", 0),
+            // Branches off Lite Flicker specifically — which is itself a branch, not a tier — so
+            // this must come after it in the array (ResolveBranchPrerequisitePosition only knows
+            // about branches already processed for the same tree).
+            ("Attack", "Lite Flicker", "Lite Release", "Lite Release",
+                "Release a burst of raw Lite energy, damaging and knocking back every enemy nearby.", 0),
             // Branches off Lite Release specifically — which is itself a branch, not a tier — so
             // this must come after it in the array (ResolveBranchPrerequisitePosition only knows
             // about branches already processed for the same tree).
@@ -905,11 +919,35 @@ namespace Darclite.EditorTools
                 "Fire a wide burst of Lite energy in a cone in front of you, damaging and knocking back everyone it catches.", 0),
             ("Sense", "Power Sense 1", "Attack Sensing I", "Attack Sensing 1",
                 "Heighten your senses — your dodge window lasts 50% longer, and you can cancel a punch or ability into a dodge instead.", 0),
+            // A second, independent branch off Power Sense 1 — sits alongside Attack Sensing I
+            // without being connected to it.
+            ("Sense", "Power Sense 1", "Steady Focus", "Steady Focus",
+                "Keep your senses steady under pressure — a small, permanent reduction to camera shake while toggled on.", 0),
+            // Three independent branches off Lite Skin, sitting side by side rather than one
+            // depending on the others — ResolveBranchPosition staggers them so they don't render
+            // on top of each other despite sharing a prerequisite.
+            ("Defense", "Lite Skin", "Lite Bracing", "Lite Bracing",
+                "Brace yourself with Lite, reducing incoming damage.", 0),
+            ("Defense", "Lite Skin", "Steady Stance", "Steady Stance",
+                "Plant your feet with Lite — a small, permanent reduction to knockback distance while toggled on.", 0),
+            ("Defense", "Lite Skin", "Brace Reflex", "Brace Reflex",
+                "A short, reflexive brace usable even mid-combo — a small damage reduction on a very short cooldown while toggled on.", 0),
+            // Two independent branches off Recovery Lite, sitting side by side rather than one
+            // depending on the other.
+            ("Restoration", "Recovery Lite", "Lite Trickle", "Lite Trickle",
+                "A faint, passive trickle of Lite that slowly restores health while you stand still and this is toggled on.", 0),
+            ("Restoration", "Recovery Lite", "Lite Sip", "Lite Sip",
+                "Take a quick sip of Lite, instantly restoring a small amount of health.", 0),
+            // Branches off Lite Sip specifically — which is itself a branch, not a tier — so this
+            // must come after it in the array (ResolveBranchPrerequisitePosition only knows about
+            // branches already processed for the same tree).
+            ("Restoration", "Lite Sip", "Second Wind", "Second Wind",
+                "Push past your limit, restoring a large chunk of health at the cost of putting every one of your other abilities on cooldown.", 0),
         };
 
         // Column/row layout constants for the Lite tree — shared between the node-placement loop
         // and ComputeLiteTreeContentBounds so the two never drift apart.
-        private const float LiteTreeColumnSpacing = 300f;
+        private const float LiteTreeColumnSpacing = 420f;
         private const float LiteTreeBaseNodeY = 40f; // slightly below center — trees grow upward from here
         private const float LiteTreeNodeHalfSize = 45f; // matches BuildTreeNode's 90x90 node size
 
@@ -1008,6 +1046,7 @@ namespace Darclite.EditorTools
                 }
 
                 var branchPositions = new System.Collections.Generic.Dictionary<string, Vector2>();
+                var siblingCounts = new System.Collections.Generic.Dictionary<string, int>();
 
                 foreach (var branch in LiteTreeBranches)
                 {
@@ -1016,17 +1055,15 @@ namespace Darclite.EditorTools
                         continue;
                     }
 
-                    Vector2 prerequisitePosition = ResolveBranchPrerequisitePosition(
-                        tree, branch.prerequisiteAbilityName, x, LiteTreeBaseNodeY, branchPositions);
-                    float branchX = prerequisitePosition.x + BranchXOffset;
-                    float branchY = prerequisitePosition.y + BranchYOffset;
+                    (Vector2 _, Vector2 branchPosition) = ResolveBranchPosition(
+                        tree, branch.prerequisiteAbilityName, x, LiteTreeBaseNodeY, branchPositions, siblingCounts);
 
-                    minX = Mathf.Min(minX, branchX - LiteTreeNodeHalfSize);
-                    maxX = Mathf.Max(maxX, branchX + LiteTreeNodeHalfSize);
-                    minY = Mathf.Min(minY, branchY - LiteTreeNodeHalfSize);
-                    maxY = Mathf.Max(maxY, branchY + LiteTreeNodeHalfSize);
+                    minX = Mathf.Min(minX, branchPosition.x - LiteTreeNodeHalfSize);
+                    maxX = Mathf.Max(maxX, branchPosition.x + LiteTreeNodeHalfSize);
+                    minY = Mathf.Min(minY, branchPosition.y - LiteTreeNodeHalfSize);
+                    maxY = Mathf.Max(maxY, branchPosition.y + LiteTreeNodeHalfSize);
 
-                    branchPositions[branch.abilityName] = new Vector2(branchX, branchY);
+                    branchPositions[branch.abilityName] = branchPosition;
                 }
             }
 
@@ -1216,6 +1253,7 @@ namespace Darclite.EditorTools
         private static void BuildTreeBranches(Transform parent, (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers) tree, float x, float baseY, Sprite lockedBackground, AbilityInfoPanelUI infoPanel)
         {
             var branchPositions = new System.Collections.Generic.Dictionary<string, Vector2>();
+            var siblingCounts = new System.Collections.Generic.Dictionary<string, int>();
 
             foreach (var branch in LiteTreeBranches)
             {
@@ -1224,16 +1262,14 @@ namespace Darclite.EditorTools
                     continue;
                 }
 
-                Vector2 prerequisitePosition = ResolveBranchPrerequisitePosition(
-                    tree, branch.prerequisiteAbilityName, x, baseY, branchPositions);
-                float branchX = prerequisitePosition.x + BranchXOffset;
-                float branchY = prerequisitePosition.y + BranchYOffset;
+                (Vector2 prerequisitePosition, Vector2 branchPosition) = ResolveBranchPosition(
+                    tree, branch.prerequisiteAbilityName, x, baseY, branchPositions, siblingCounts);
 
-                BuildTreeConnectorLineBetween(parent, prerequisitePosition, new Vector2(branchX, branchY));
+                BuildTreeConnectorLineBetween(parent, prerequisitePosition, branchPosition);
                 BuildTreeNode(parent, tree.treeTitle, (branch.abilityName, branch.iconFileName, branch.description, branch.cost),
-                    branch.prerequisiteAbilityName, branchX, branchY, lockedBackground, infoPanel, showTitle: false);
+                    branch.prerequisiteAbilityName, branchPosition.x, branchPosition.y, lockedBackground, infoPanel, showTitle: false);
 
-                branchPositions[branch.abilityName] = new Vector2(branchX, branchY);
+                branchPositions[branch.abilityName] = branchPosition;
             }
         }
 
@@ -1258,6 +1294,31 @@ namespace Darclite.EditorTools
             }
 
             return new Vector2(x, baseY);
+        }
+
+        private const float BranchSiblingYOffset = 90f;
+
+        // Wraps ResolveBranchPrerequisitePosition with sibling staggering — two or more branches
+        // sharing the same prerequisite (e.g. Attack Sensing I and Steady Focus both off Power
+        // Sense 1, or Lite Bracing and Steady Stance both off Lite Skin) would otherwise all resolve
+        // to the exact same diagonal offset and render on top of each other. siblingCounts tracks
+        // how many branches off each prerequisite have already been placed (by BuildTreeBranches/
+        // ComputeLiteTreeContentBounds, mirroring branchPositions), fanning each subsequent sibling
+        // out further along the same diagonal instead of stacking exactly on the first one.
+        private static (Vector2 prerequisitePosition, Vector2 branchPosition) ResolveBranchPosition(
+            (string treeTitle, (string abilityName, string iconFileName, string description, int cost)[] tiers) tree,
+            string prerequisiteAbilityName, float x, float baseY,
+            System.Collections.Generic.Dictionary<string, Vector2> branchPositions,
+            System.Collections.Generic.Dictionary<string, int> siblingCounts)
+        {
+            Vector2 prerequisitePosition = ResolveBranchPrerequisitePosition(tree, prerequisiteAbilityName, x, baseY, branchPositions);
+
+            int siblingIndex = siblingCounts.TryGetValue(prerequisiteAbilityName, out int count) ? count : 0;
+            siblingCounts[prerequisiteAbilityName] = siblingIndex + 1;
+
+            float branchX = prerequisitePosition.x + BranchXOffset;
+            float branchY = prerequisitePosition.y + BranchYOffset + siblingIndex * BranchSiblingYOffset;
+            return (prerequisitePosition, new Vector2(branchX, branchY));
         }
 
         private static void BuildTreeNode(Transform parent, string treeTitle, (string abilityName, string iconFileName, string description, int cost) tier, string prerequisiteAbilityName, float x, float y, Sprite lockedBackground, AbilityInfoPanelUI infoPanel, bool showTitle)
@@ -1923,8 +1984,11 @@ namespace Darclite.EditorTools
                     gateSo.ApplyModifiedProperties();
 
                     // Back-fill the tier before this one — it doesn't know what supersedes it
-                    // until this (later) tier actually exists.
-                    if (previousGate != null)
+                    // until this (later) tier actually exists. Skipped for a toggle-type previous
+                    // tier (Lite Spark) — it can never be equipped in the first place, and should
+                    // never disappear from the Abilities page, since that page's info panel is the
+                    // only place its Toggle On/Off button lives.
+                    if (previousGate != null && !AbilityLoadout.IsToggleAbility(tree.tiers[tierIndex - 1].abilityName))
                     {
                         SerializedObject previousGateSo = new SerializedObject(previousGate);
                         previousGateSo.FindProperty("supersededByAbilityName").stringValue = tier.abilityName;

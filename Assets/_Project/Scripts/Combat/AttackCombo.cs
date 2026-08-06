@@ -59,6 +59,7 @@ namespace Darclite.Combat
         private CharacterAudio _characterAudio;
         private LiteConcentrationAura _liteConcentrationAura;
         private ForcefulStrikeAbility _forcefulStrikeAbility;
+        private LiteSparkAbility _liteSparkAbility;
         private Coroutine _resolveHitRoutine;
 
         private void Awake()
@@ -73,6 +74,7 @@ namespace Darclite.Combat
             // Null for anyone who can't use the ability (enemies) — guarded at every use below.
             _liteConcentrationAura = GetComponent<LiteConcentrationAura>();
             _forcefulStrikeAbility = GetComponent<ForcefulStrikeAbility>();
+            _liteSparkAbility = GetComponent<LiteSparkAbility>();
         }
 
         private void Update()
@@ -240,6 +242,10 @@ namespace Darclite.Combat
             }
 
             bool isBlockBroken = targetGuard != null && targetGuard.CurrentGuardState == GuardState.Vulnerable;
+            // Lite Spark is a flat, always-on passive — unlike the powerups below, it stacks with
+            // whichever one of them is active rather than being replaced by it.
+            bool liteSparkActive = _liteSparkAbility != null && _liteSparkAbility.IsActive;
+            int sparkedDamage = liteSparkActive ? Mathf.RoundToInt(damage * LiteSparkAbility.DamageMultiplier) : damage;
             // Guaranteed false whenever Forceful Strike is active, since activating it force-
             // deactivates Lite Concentration (only one damage powerup at a time) — no extra
             // exclusion check needed here.
@@ -248,7 +254,7 @@ namespace Darclite.Combat
             // Reads whichever tier (I or II) is actually equipped/active — 20% vs 30% — rather
             // than a fixed constant, since only one tier can ever be active at a time.
             float liteMultiplier = useLiteHit ? _liteConcentrationAura.DamageMultiplier : 1f;
-            int boostedDamage = useLiteHit ? Mathf.RoundToInt(damage * liteMultiplier) : damage;
+            int boostedDamage = useLiteHit ? Mathf.RoundToInt(sparkedDamage * liteMultiplier) : sparkedDamage;
             if (forcefulStrikeActive)
             {
                 boostedDamage += ForcefulStrikeAbility.BonusDamage;

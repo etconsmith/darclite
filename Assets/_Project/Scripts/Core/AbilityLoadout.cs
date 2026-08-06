@@ -28,6 +28,12 @@ namespace Darclite.Core
         {
             "Power Sense 1",
             "Attack Sensing I",
+            "Lite Spark",
+            "Steady Focus",
+            "Lite Skin",
+            "Steady Stance",
+            "Brace Reflex",
+            "Lite Trickle",
         };
 
         private static readonly Dictionary<string, bool> _toggleStates = new Dictionary<string, bool>();

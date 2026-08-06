@@ -304,10 +304,19 @@ namespace Darclite.EditorTools
             SetupLiteConcentrationAura(player, animator);
             SetupLiteRecoveryAbility(player, animator, combatant);
             SetupLiteBracingAbility(player);
+            SetupLiteSparkAbility(player);
+            SetupLiteFlickerAbility(player, animator);
             SetupLiteReleaseAbility(player, animator);
             SetupForcefulStrikeAbility(player, animator);
             SetupAttackSensingAbility(player);
             SetupLiteBurstAbility(player, animator);
+            SetupSteadyFocusAbility(player);
+            SetupLiteSkinAbility(player);
+            SetupSteadyStanceAbility(player);
+            SetupBraceReflexAbility(player);
+            SetupLiteTrickleAbility(player, combatant);
+            SetupLiteSipAbility(player, combatant);
+            SetupSecondWindAbility(player, combatant);
 
             Selection.activeGameObject = player;
             Debug.Log("Player character spawned and wired up.");
@@ -675,6 +684,222 @@ namespace Darclite.EditorTools
             }
         }
 
+        // A pure toggle read directly off AttackCombo — no VFX/audio/animation of its own, so
+        // unlike every other ability here there's nothing to wire beyond just making sure it exists.
+        private static void SetupLiteSparkAbility(GameObject player)
+        {
+            if (player.GetComponent<LiteSparkAbility>() == null)
+            {
+                player.AddComponent<LiteSparkAbility>();
+            }
+        }
+
+        // A pure toggle read directly off ThirdPersonOrbitCamera.Shake — no VFX/audio/animation of
+        // its own, so unlike every other ability here there's nothing to wire beyond just making
+        // sure it exists.
+        private static void SetupSteadyFocusAbility(GameObject player)
+        {
+            if (player.GetComponent<SteadyFocusAbility>() == null)
+            {
+                player.AddComponent<SteadyFocusAbility>();
+            }
+        }
+
+        // A pure toggle read directly off Combatant.ApplyDamage — no VFX/audio/animation of its
+        // own, so unlike every other ability here there's nothing to wire beyond just making sure
+        // it exists.
+        private static void SetupLiteSkinAbility(GameObject player)
+        {
+            if (player.GetComponent<LiteSkinAbility>() == null)
+            {
+                player.AddComponent<LiteSkinAbility>();
+            }
+        }
+
+        // A pure toggle read directly off Combatant.KnockbackSlide — no VFX/audio/animation of its
+        // own, so unlike every other ability here there's nothing to wire beyond just making sure
+        // it exists.
+        private static void SetupSteadyStanceAbility(GameObject player)
+        {
+            if (player.GetComponent<SteadyStanceAbility>() == null)
+            {
+                player.AddComponent<SteadyStanceAbility>();
+            }
+        }
+
+        // ==================== Brace Reflex Ability ====================
+
+        private const string BraceReflexVfxAssetPath = "Assets/_Project/VFX/Brace Reflex.vfx";
+
+        // Parented directly to the player root at local zero, same as Lite Bracing's aura — no
+        // animation means the visual has to read as "on the player" regardless of what pose
+        // they're currently in when it fires.
+        private static void SetupBraceReflexAbility(GameObject player)
+        {
+            VisualEffectAsset braceVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(BraceReflexVfxAssetPath);
+            if (braceVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Brace Reflex VFX asset at {BraceReflexVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "BraceReflexVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("BraceReflexVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+
+            VisualEffect braceVfx = null;
+            if (braceVfxAsset != null)
+            {
+                braceVfx = vfxObject.GetComponent<VisualEffect>();
+                braceVfx.visualEffectAsset = braceVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "BraceReflexAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("BraceReflexAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip braceClip = LoadAudioClip(LiteAudioFolder, "Brace Reflex");
+
+            BraceReflexAbility abilityController = player.GetComponent<BraceReflexAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<BraceReflexAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("braceVfx").objectReferenceValue = braceVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("braceClip").objectReferenceValue = braceClip;
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Trickle Ability ====================
+
+        // A pure passive read against Combatant/PlayerController every frame — no VFX/audio/
+        // animation of its own.
+        private static void SetupLiteTrickleAbility(GameObject player, Combatant combatant)
+        {
+            PlayerController playerController = player.GetComponent<PlayerController>();
+
+            LiteTrickleAbility abilityController = player.GetComponent<LiteTrickleAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteTrickleAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("combatant").objectReferenceValue = combatant;
+            abilitySo.FindProperty("playerController").objectReferenceValue = playerController;
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Sip Ability ====================
+
+        private const string LiteSipVfxAssetPath = "Assets/_Project/VFX/Lite Sip.vfx";
+
+        // Parented directly to the player root at local zero — no animation, so this puts the
+        // heal VFX at their feet regardless of whatever pose they're currently in.
+        private static void SetupLiteSipAbility(GameObject player, Combatant combatant)
+        {
+            VisualEffectAsset sipVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteSipVfxAssetPath);
+            if (sipVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Sip VFX asset at {LiteSipVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "LiteSipVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("LiteSipVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+
+            VisualEffect sipVfx = null;
+            if (sipVfxAsset != null)
+            {
+                sipVfx = vfxObject.GetComponent<VisualEffect>();
+                sipVfx.visualEffectAsset = sipVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "LiteSipAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("LiteSipAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip sipClip = LoadAudioClip(LiteAudioFolder, "Lite Sip");
+
+            LiteSipAbility abilityController = player.GetComponent<LiteSipAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteSipAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("combatant").objectReferenceValue = combatant;
+            abilitySo.FindProperty("sipVfx").objectReferenceValue = sipVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("sipClip").objectReferenceValue = sipClip;
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Second Wind Ability ====================
+
+        private const string SecondWindVfxAssetPath = "Assets/_Project/VFX/Second Wind.vfx";
+
+        // Parented directly to the player root at local zero, same as every other feet-VFX ability
+        // here — the emitter tracks the player automatically as a child transform. Whether the
+        // spawned particles themselves also follow (rather than hanging in place once emitted)
+        // depends on the graph's own Simulation Space setting (Local vs World), which lives inside
+        // the VFX Graph asset and can't be changed from this script.
+        private static void SetupSecondWindAbility(GameObject player, Combatant combatant)
+        {
+            VisualEffectAsset windVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(SecondWindVfxAssetPath);
+            if (windVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Second Wind VFX asset at {SecondWindVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "SecondWindVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("SecondWindVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+
+            VisualEffect windVfx = null;
+            if (windVfxAsset != null)
+            {
+                windVfx = vfxObject.GetComponent<VisualEffect>();
+                windVfx.visualEffectAsset = windVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "SecondWindAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("SecondWindAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip windClip = LoadAudioClip(LiteAudioFolder, "Second Wind");
+
+            SecondWindAbility abilityController = player.GetComponent<SecondWindAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<SecondWindAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("combatant").objectReferenceValue = combatant;
+            abilitySo.FindProperty("windVfx").objectReferenceValue = windVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("windClip").objectReferenceValue = windClip;
+            abilitySo.ApplyModifiedProperties();
+        }
+
         // Parented directly to the player root (not a bone) at local zero — since the player's
         // root transform sits at ground level, this puts the effect at their feet and keeps it
         // riding along with them automatically as they move, without any per-frame position code.
@@ -870,6 +1095,77 @@ namespace Darclite.EditorTools
             abilitySo.FindProperty("castAnchor").objectReferenceValue = castAnchor;
             abilitySo.FindProperty("burstRange").floatValue = 13.5f;
             abilitySo.FindProperty("burstHalfAngle").floatValue = 25f;
+            if (castDuration > 0f)
+            {
+                abilitySo.FindProperty("castDuration").floatValue = castDuration;
+            }
+            abilitySo.ApplyModifiedProperties();
+        }
+
+        // ==================== Lite Flicker Ability ====================
+
+        private const string LiteFlickerVfxAssetPath = "Assets/_Project/VFX/Lite Flicker.vfx";
+
+        // Parented directly to the player root at local zero — position and rotation are both set
+        // fresh on every cast (LiteFlickerAbility orients it along the caster's current forward),
+        // so its resting transform here doesn't matter beyond keeping it out from underfoot.
+        private static void SetupLiteFlickerAbility(GameObject player, Animator animator)
+        {
+            // Force a fresh import so CharacterModelPostprocessor's Lite Animations handling
+            // actually applies even if this clip was already imported once before that folder was
+            // recognized.
+            AssetDatabase.ImportAsset($"{LiteAnimationsFolder}/Lite Flicker.fbx", ImportAssetOptions.ForceUpdate);
+
+            VisualEffectAsset flickerVfxAsset = AssetDatabase.LoadAssetAtPath<VisualEffectAsset>(LiteFlickerVfxAssetPath);
+            if (flickerVfxAsset == null)
+            {
+                Debug.LogWarning($"[SceneBootstrapper] Could not find Lite Flicker VFX asset at {LiteFlickerVfxAssetPath}");
+            }
+
+            Transform existingVfx = FindDescendant(player.transform, "LiteFlickerVFX");
+            GameObject vfxObject = existingVfx != null ? existingVfx.gameObject : new GameObject("LiteFlickerVFX", typeof(VisualEffect));
+            vfxObject.transform.SetParent(player.transform, false);
+            vfxObject.transform.localPosition = Vector3.zero;
+            vfxObject.transform.localScale = Vector3.one;
+
+            VisualEffect flickerVfx = null;
+            if (flickerVfxAsset != null)
+            {
+                flickerVfx = vfxObject.GetComponent<VisualEffect>();
+                flickerVfx.visualEffectAsset = flickerVfxAsset;
+            }
+
+            Transform existingAudio = FindDescendant(player.transform, "LiteFlickerAudioSource");
+            GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("LiteFlickerAudioSource", typeof(AudioSource));
+            audioObject.transform.SetParent(player.transform, false);
+            AudioSource audioSource = audioObject.GetComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.loop = false;
+            audioSource.spatialBlend = 1f;
+
+            AudioClip flickerClip = LoadAudioClip(LiteAudioFolder, "Lite Flicker");
+
+            float castDuration = GetLiteAnimationClipLength("Lite Flicker");
+
+            // Flicker originates from the hand rather than the feet — falls back to the player
+            // root via LiteFlickerAbility itself if this bone can't be resolved (e.g. non-humanoid
+            // rig).
+            Transform castAnchor = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightHand) : null;
+
+            LiteFlickerAbility abilityController = player.GetComponent<LiteFlickerAbility>();
+            if (abilityController == null)
+            {
+                abilityController = player.AddComponent<LiteFlickerAbility>();
+            }
+
+            SerializedObject abilitySo = new SerializedObject(abilityController);
+            abilitySo.FindProperty("animator").objectReferenceValue = animator;
+            abilitySo.FindProperty("flickerVfx").objectReferenceValue = flickerVfx;
+            abilitySo.FindProperty("audioSource").objectReferenceValue = audioSource;
+            abilitySo.FindProperty("flickerClip").objectReferenceValue = flickerClip;
+            abilitySo.FindProperty("castAnchor").objectReferenceValue = castAnchor;
+            abilitySo.FindProperty("flickerRange").floatValue = 4.2f;
+            abilitySo.FindProperty("flickerHalfAngle").floatValue = 20f;
             if (castDuration > 0f)
             {
                 abilitySo.FindProperty("castDuration").floatValue = castDuration;

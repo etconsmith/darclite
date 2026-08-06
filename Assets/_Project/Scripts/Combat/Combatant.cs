@@ -71,6 +71,9 @@ namespace Darclite.Combat
         private Coroutine _hitReactionCoroutine;
         private CharacterAudio _characterAudio;
         private LiteBracingAbility _liteBracingAbility;
+        private LiteSkinAbility _liteSkinAbility;
+        private SteadyStanceAbility _steadyStanceAbility;
+        private BraceReflexAbility _braceReflexAbility;
 
         private void Awake()
         {
@@ -88,6 +91,9 @@ namespace Darclite.Combat
             _characterAudio = GetComponent<CharacterAudio>();
             // Null for anyone who can't use the ability (enemies) — guarded at every use below.
             _liteBracingAbility = GetComponent<LiteBracingAbility>();
+            _liteSkinAbility = GetComponent<LiteSkinAbility>();
+            _steadyStanceAbility = GetComponent<SteadyStanceAbility>();
+            _braceReflexAbility = GetComponent<BraceReflexAbility>();
 
             // VisualEffect assets default to auto-firing their "OnPlay" event once as soon as
             // they're enabled — stop them immediately so they only ever play from PlayHitEffect on
@@ -256,6 +262,13 @@ namespace Darclite.Combat
                 _navMeshAgent.updatePosition = false;
             }
 
+            // Only the travel distance shrinks — knockbackDuration (and the animator state speed
+            // synced to it) stays the same, so the knockback still plays out at its normal pace,
+            // just covering less ground.
+            float effectiveKnockbackDistance = _steadyStanceAbility != null && _steadyStanceAbility.IsActive
+                ? knockbackDistance * (1f - SteadyStanceAbility.KnockbackReductionFraction)
+                : knockbackDistance;
+
             float timer = 0f;
             float previousAirHeight = 0f;
 
@@ -264,7 +277,7 @@ namespace Darclite.Combat
                 timer += Mathf.Min(Time.deltaTime, 1f / 30f);
                 float t = Mathf.Clamp01(timer / knockbackDuration);
                 float speedMultiplier = EvaluateKnockbackCurve(t);
-                Vector3 delta = direction * ((knockbackDistance / knockbackDuration) * speedMultiplier * Time.deltaTime);
+                Vector3 delta = direction * ((effectiveKnockbackDistance / knockbackDuration) * speedMultiplier * Time.deltaTime);
 
                 // The Knockback animator state's speed is set (in AnimatorControllerBuilder) so the
                 // clip's full length exactly matches knockbackDuration — so t here IS the clip's own
@@ -337,9 +350,23 @@ namespace Darclite.Combat
                 return;
             }
 
+            // Lite Skin is a flat, always-on passive — unlike Lite Bracing's temporary channel, it
+            // stacks with it rather than being replaced by it.
+            if (_liteSkinAbility != null && _liteSkinAbility.IsActive)
+            {
+                damage = Mathf.RoundToInt(damage * (1f - LiteSkinAbility.DamageReductionFraction));
+            }
+
             if (_liteBracingAbility != null && _liteBracingAbility.IsActive)
             {
                 damage = Mathf.RoundToInt(damage * (1f - LiteBracingAbility.DamageReductionFraction));
+            }
+
+            // Brace Reflex's window is a separate, much shorter reduction on top of whichever of
+            // the above happen to also be active — it's a reflexive top-up, not a replacement.
+            if (_braceReflexAbility != null && _braceReflexAbility.IsBracing)
+            {
+                damage = Mathf.RoundToInt(damage * (1f - BraceReflexAbility.DamageReductionFraction));
             }
 
             CurrentHealth = Mathf.Max(CurrentHealth - damage, 0);

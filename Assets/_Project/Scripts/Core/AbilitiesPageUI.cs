@@ -65,6 +65,15 @@ namespace Darclite.Core
 
             if (_selectedIcon == icon)
             {
+                // A toggle ability has no equip state to back out of — its info panel is the only
+                // place its Toggle On/Off button lives, so re-clicking its own icon keeps it
+                // pinned instead of deselecting back to the default ability (which would make the
+                // button vanish and look like the ability "stopped working" after the first use).
+                if (AbilityLoadout.IsToggleAbility(icon.AbilityName))
+                {
+                    return;
+                }
+
                 icon.SetSelected(false);
                 _selectedIcon = null;
                 infoPanel?.Show(defaultAbilityName, defaultAbilityDescription, defaultTreeTitle, defaultCost, defaultIconSprite);

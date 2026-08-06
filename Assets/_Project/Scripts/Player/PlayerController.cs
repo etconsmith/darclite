@@ -68,6 +68,11 @@ namespace Darclite.Player
         // animation. Gate attacking on this instead of letting that queuing happen at all.
         public bool CanAttack => _controller.isGrounded && !_isPreparingJump && !_isDodging;
 
+        // Read by LiteTrickleAbility to gate its passive regen on "standing still" — mirrors the
+        // same threshold/definition already used for the Animator's own IsMoving parameter and
+        // footstep audio, so it's consistent with what actually reads as "moving" everywhere else.
+        public bool IsMoving { get; private set; }
+
         private CharacterController _controller;
         private UnityEngine.Camera _mainCamera;
         private ThirdPersonOrbitCamera _orbitCamera;
@@ -499,6 +504,8 @@ namespace Darclite.Player
 
         private void UpdateAnimator(Vector2 moveInput, bool isSprinting)
         {
+            IsMoving = moveInput.sqrMagnitude > 0.01f;
+
             if (animator == null)
             {
                 return;
