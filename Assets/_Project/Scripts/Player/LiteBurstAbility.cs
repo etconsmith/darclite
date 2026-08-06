@@ -201,6 +201,30 @@ namespace Darclite.Player
                 // Lite Hit flash VFX plays instead of the normal hit effect.
                 target.TakeKnockback(burstDamage, origin, useLiteHit: true);
             }
+
+            DestructibleChunk[] chunks = FindObjectsByType<DestructibleChunk>(FindObjectsInactive.Exclude);
+            foreach (DestructibleChunk chunk in chunks)
+            {
+                if (chunk == null)
+                {
+                    continue;
+                }
+
+                Vector3 toChunk = chunk.transform.position - origin;
+                toChunk.y = 0f;
+                float chunkDistance = toChunk.magnitude;
+                if (chunkDistance > burstRange || chunkDistance < 0.0001f)
+                {
+                    continue;
+                }
+
+                if (Vector3.Angle(forward, toChunk) > burstHalfAngle)
+                {
+                    continue;
+                }
+
+                chunk.ApplyDamage(burstDamage, origin);
+            }
         }
     }
 }

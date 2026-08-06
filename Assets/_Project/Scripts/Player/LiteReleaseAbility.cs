@@ -263,6 +263,23 @@ namespace Darclite.Player
                 // AttackCombo — this is a direct area effect, not a punch.
                 target.TakeKnockback(explosionDamage, origin, useLiteHit: false);
             }
+
+            DestructibleChunk[] chunks = FindObjectsByType<DestructibleChunk>(FindObjectsInactive.Exclude);
+            foreach (DestructibleChunk chunk in chunks)
+            {
+                if (chunk == null)
+                {
+                    continue;
+                }
+
+                float chunkSqrDistance = (chunk.transform.position - origin).sqrMagnitude;
+                if (chunkSqrDistance > explosionRadius * explosionRadius)
+                {
+                    continue;
+                }
+
+                chunk.ApplyDamage(explosionDamage, origin);
+            }
         }
     }
 }

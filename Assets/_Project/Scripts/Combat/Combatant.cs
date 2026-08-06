@@ -75,6 +75,12 @@ namespace Darclite.Combat
         private SteadyStanceAbility _steadyStanceAbility;
         private BraceReflexAbility _braceReflexAbility;
 
+        // Current knockback slide speed/direction, read by OnControllerColliderHit to decide
+        // whether a mid-slide collision was hard enough to break a DestructibleChunk. Only
+        // meaningful while IsBeingKnockedBack is true.
+        private float _knockbackSpeed;
+        private Vector3 _knockbackDirection;
+
         private void Awake()
         {
             CurrentHealth = maxHealth;
@@ -254,6 +260,7 @@ namespace Darclite.Combat
         private IEnumerator KnockbackSlide(Vector3 direction)
         {
             IsBeingKnockedBack = true;
+            _knockbackDirection = direction;
 
             bool usingAgent = _navMeshAgent != null && _navMeshAgent.enabled;
             if (usingAgent)
@@ -277,7 +284,10 @@ namespace Darclite.Combat
                 timer += Mathf.Min(Time.deltaTime, 1f / 30f);
                 float t = Mathf.Clamp01(timer / knockbackDuration);
                 float speedMultiplier = EvaluateKnockbackCurve(t);
-                Vector3 delta = direction * ((effectiveKnockbackDistance / knockbackDuration) * speedMultiplier * Time.deltaTime);
+                // Read by OnControllerColliderHit — Move() below can fire that callback
+                // synchronously, so this needs to be current before the call, not after.
+                _knockbackSpeed = (effectiveKnockbackDistance / knockbackDuration) * speedMultiplier;
+                Vector3 delta = direction * (_knockbackSpeed * Time.deltaTime);
 
                 // The Knockback animator state's speed is set (in AnimatorControllerBuilder) so the
                 // clip's full length exactly matches knockbackDuration — so t here IS the clip's own
@@ -306,7 +316,26 @@ namespace Darclite.Combat
                 _navMeshAgent.isStopped = false;
             }
 
+            _knockbackSpeed = 0f;
             IsBeingKnockedBack = false;
+        }
+
+        // Unity calls this automatically whenever CharacterController.Move (used by
+        // KnockbackSlide above) touches a collider — the idiomatic way to detect "this character
+        // just crashed into something" without polling collision state manually. Only meaningful
+        // mid-knockback; a normal walk into a destructible chunk shouldn't break it.
+        private void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            if (!IsBeingKnockedBack)
+            {
+                return;
+            }
+
+            DestructibleChunk chunk = hit.collider.GetComponent<DestructibleChunk>();
+            if (chunk != null)
+            {
+                chunk.ApplyImpact(_knockbackSpeed, _knockbackDirection);
+            }
         }
 
         private float EvaluateKnockbackCurve(float t)

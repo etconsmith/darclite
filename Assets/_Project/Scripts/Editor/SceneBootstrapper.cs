@@ -3858,5 +3858,69 @@ namespace Darclite.EditorTools
 
             return bounds;
         }
+
+        // ==================== Destructible Test Wall (Phase 0 placeholder) ====================
+
+        // Placeholder-cube version of a destructible structure — built purely to test-drive the
+        // DestructibleChunk pipeline (Lite damage, hard-knockback impacts, breaking, despawn)
+        // before any real Blender art exists. A real house will get its own builder later that
+        // reads Chunk_/Static_ naming off an imported model instead of generating cubes.
+        private const string TestDestructibleWallName = "TestDestructibleWall";
+
+        [MenuItem("Darclite/Build Test Destructible Wall")]
+        public static void BuildTestDestructibleWall()
+        {
+            GameObject existing = GameObject.Find(TestDestructibleWallName);
+            if (existing != null)
+            {
+                Object.DestroyImmediate(existing);
+            }
+
+            int destructibleLayer = DestructibleLayerSetup.EnsureDestructibleLayerExists();
+
+            GameObject root = new GameObject(TestDestructibleWallName);
+            root.transform.position = new Vector3(10f, 0f, 10f);
+
+            const float chunkSize = 1f;
+            const int columns = 3;
+            const int rows = 3;
+
+            // Permanent solid geometry beneath the breakable panel — the wall never fully
+            // disappears even once every chunk above it has broken away.
+            GameObject baseObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            baseObject.name = "Static_Foundation";
+            baseObject.transform.SetParent(root.transform, false);
+            baseObject.transform.localPosition = new Vector3(0f, -0.5f, 0f);
+            baseObject.transform.localScale = new Vector3(columns * chunkSize, 1f, 0.5f);
+            if (destructibleLayer >= 0)
+            {
+                baseObject.layer = destructibleLayer;
+            }
+
+            for (int row = 0; row < rows; row++)
+            {
+                for (int col = 0; col < columns; col++)
+                {
+                    GameObject chunk = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    chunk.name = $"Chunk_Wall_{row}_{col}";
+                    chunk.transform.SetParent(root.transform, false);
+                    chunk.transform.localPosition = new Vector3(
+                        (col - (columns - 1) * 0.5f) * chunkSize,
+                        row * chunkSize,
+                        0f);
+                    chunk.transform.localScale = Vector3.one * (chunkSize * 0.95f);
+                    if (destructibleLayer >= 0)
+                    {
+                        chunk.layer = destructibleLayer;
+                    }
+
+                    // RequireComponent(typeof(Rigidbody)) on DestructibleChunk auto-adds and
+                    // configures the Rigidbody (kinematic, starts rigid) in its own Awake().
+                    chunk.AddComponent<DestructibleChunk>();
+                }
+            }
+
+            Debug.Log($"[SceneBootstrapper] Test destructible wall built at {root.transform.position} with {columns * rows} chunks.");
+        }
     }
 }

@@ -33,6 +33,6 @@ Material:
     - _SunVisibility: 1
     m_Colors:
     - _RayColor: {r: 1, g: 0.92, b: 0.75, a: 1}
-    - _SunScreenPos: {r: 0.5272282, g: 0.7187793, b: 4838.338, a: 0}
+    - _SunScreenPos: {r: 0.88673055, g: 0.78284675, b: 3501.1401, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
