@@ -3922,5 +3922,130 @@ namespace Darclite.EditorTools
 
             Debug.Log($"[SceneBootstrapper] Test destructible wall built at {root.transform.position} with {columns * rows} chunks.");
         }
+
+        // ==================== House Prefab (Phase 2: real Blender art) ====================
+
+        private const string HouseModelPath = "Assets/_Project/Art/Environment/House.fbx";
+        private const string HousePrefabPath = "Assets/_Project/Prefabs/House.prefab";
+        private const string HouseDarkModelPath = "Assets/_Project/Art/Environment/HouseDark.fbx";
+        private const string HouseDarkPrefabPath = "Assets/_Project/Prefabs/HouseDark.prefab";
+        private const string HouseCabinModelPath = "Assets/_Project/Art/Environment/HouseCabin.fbx";
+        private const string HouseCabinPrefabPath = "Assets/_Project/Prefabs/HouseCabin.prefab";
+        private const string StonePathModelPath = "Assets/_Project/Art/Environment/StonePath.fbx";
+        private const string StonePathPrefabPath = "Assets/_Project/Prefabs/StonePath.prefab";
+        private const string HouseTwoStoryModelPath = "Assets/_Project/Art/Environment/HouseTwoStory.fbx";
+        private const string HouseTwoStoryPrefabPath = "Assets/_Project/Prefabs/HouseTwoStory.prefab";
+
+        [MenuItem("Darclite/Build House Prefab")]
+        public static void BuildHousePrefab()
+        {
+            BuildDestructibleStructurePrefab(HouseModelPath, HousePrefabPath);
+        }
+
+        [MenuItem("Darclite/Build House Dark Prefab")]
+        public static void BuildHouseDarkPrefab()
+        {
+            BuildDestructibleStructurePrefab(HouseDarkModelPath, HouseDarkPrefabPath);
+        }
+
+        [MenuItem("Darclite/Build House Cabin Prefab")]
+        public static void BuildHouseCabinPrefab()
+        {
+            BuildDestructibleStructurePrefab(HouseCabinModelPath, HouseCabinPrefabPath);
+        }
+
+        [MenuItem("Darclite/Build Stone Path Prefab")]
+        public static void BuildStonePathPrefab()
+        {
+            BuildDestructibleStructurePrefab(StonePathModelPath, StonePathPrefabPath);
+        }
+
+        [MenuItem("Darclite/Build House Two Story Prefab")]
+        public static void BuildHouseTwoStoryPrefab()
+        {
+            BuildDestructibleStructurePrefab(HouseTwoStoryModelPath, HouseTwoStoryPrefabPath);
+        }
+
+        // Walks an imported destructible-structure model's children by name convention (matching
+        // BuildTestDestructibleWall's cube pieces): Chunk_-prefixed pieces get a convex
+        // MeshCollider + Rigidbody + DestructibleChunk (RequireComponent auto-adds the
+        // Rigidbody), Static_-prefixed pieces just get a plain MeshCollider.
+        //
+        // Built in total isolation from the open scene, the same way BuildBanditPrefab builds
+        // its temp object — never searches for or touches any object already placed by hand in
+        // the scene, so you can drop as many copies of the resulting prefab in wherever you want
+        // (renamed however) and re-running this will only ever update the prefab asset itself.
+        // Existing placed instances then pick up the change automatically, the same as any other
+        // Unity prefab.
+        private static void BuildDestructibleStructurePrefab(string modelPath, string prefabPath)
+        {
+            GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+            if (modelAsset == null)
+            {
+                Debug.LogError($"[SceneBootstrapper] Could not find model at {modelPath}");
+                return;
+            }
+
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(modelAsset);
+            instance.name = "__DestructibleStructureBuildTemp__";
+
+            int destructibleLayer = DestructibleLayerSetup.EnsureDestructibleLayerExists();
+
+            Transform[] allChildren = instance.GetComponentsInChildren<Transform>(true);
+            int chunkCount = 0;
+            int staticCount = 0;
+            foreach (Transform t in allChildren)
+            {
+                if (t == instance.transform)
+                {
+                    continue;
+                }
+
+                MeshFilter meshFilter = t.GetComponent<MeshFilter>();
+                if (meshFilter == null || meshFilter.sharedMesh == null)
+                {
+                    continue;
+                }
+
+                GameObject go = t.gameObject;
+                if (destructibleLayer >= 0)
+                {
+                    go.layer = destructibleLayer;
+                }
+
+                if (go.name.StartsWith("Chunk_"))
+                {
+                    MeshCollider collider = go.GetComponent<MeshCollider>();
+                    if (collider == null)
+                    {
+                        collider = go.AddComponent<MeshCollider>();
+                    }
+                    collider.convex = true;
+
+                    if (go.GetComponent<DestructibleChunk>() == null)
+                    {
+                        go.AddComponent<DestructibleChunk>();
+                    }
+                    chunkCount++;
+                }
+                else if (go.name.StartsWith("Static_"))
+                {
+                    if (go.GetComponent<MeshCollider>() == null)
+                    {
+                        go.AddComponent<MeshCollider>();
+                    }
+                    staticCount++;
+                }
+            }
+
+            if (!AssetDatabase.IsValidFolder("Assets/_Project/Prefabs"))
+            {
+                AssetDatabase.CreateFolder("Assets/_Project", "Prefabs");
+            }
+            PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
+            Object.DestroyImmediate(instance);
+
+            Debug.Log($"[SceneBootstrapper] Prefab rebuilt at {prefabPath} ({chunkCount} destructible chunks, {staticCount} static pieces). Drag it from the Project window to place copies in the scene.");
+        }
     }
 }
