@@ -30,9 +30,9 @@ Material:
     - _RayDensity: 1
     - _RayIntensity: 0.4
     - _RayWeight: 0.06
-    - _SunVisibility: 1
+    - _SunVisibility: 0
     m_Colors:
     - _RayColor: {r: 1, g: 0.92, b: 0.75, a: 1}
-    - _SunScreenPos: {r: 0.88673055, g: 0.78284675, b: 3501.1401, a: 0}
+    - _SunScreenPos: {r: -1.5370353, g: -4.911185, b: -621.6511, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
