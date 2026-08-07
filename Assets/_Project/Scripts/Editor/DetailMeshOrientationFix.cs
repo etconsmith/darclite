@@ -16,12 +16,18 @@ namespace Darclite.EditorTools
     // so the Blender-space orientation and true (tiny) size show through directly.
     //
     // This rotates each affected mesh's vertex data by -90 degrees about local X (Blender's Z-up ->
-    // Y-up swap, verified against Tree.fbx since its asymmetric base-to-canopy shape is the only one
-    // of the four that visibly reveals an upside-down sign error — the symmetric grass/stone meshes
-    // can't) and scales it up 100x every time it's (re)imported, so the fix survives future reimports
-    // without depending on the original Blender scene still existing. Requires
-    // SceneBootstrapper.RevertTerrainDetailMeshBakeAxisConversion to have been run once on
-    // GrassClump/StonePathDetail so this is the only correction being applied to any of the four.
+    // Y-up swap, sign verified against an early single-mesh version of Tree.fbx before it moved to
+    // the destructible-prefab pipeline below) and scales it up 100x every time it's (re)imported, so
+    // the fix survives future reimports without depending on the original Blender scene still
+    // existing. Requires SceneBootstrapper.RevertTerrainDetailMeshBakeAxisConversion to have been run
+    // once on GrassClump/StonePathDetail so this is the only correction applied to any of these.
+    //
+    // Tree.fbx is deliberately NOT in this list even though it came from the same Blender session and
+    // needs the same underlying correction — it's now a multi-object Chunk_/Static_ hierarchy (for
+    // BuildDestructibleStructurePrefab) instead of one single mesh, and this postprocessor's per-mesh
+    // vertex rotation doesn't touch each child's relative position, so applying it here would
+    // scramble the hierarchy. Tree.fbx gets the same rotate+scale correction pre-baked directly into
+    // its root transform in Blender instead, before export.
     public class DetailMeshOrientationFix : AssetPostprocessor
     {
         private const float ScaleCorrection = 100f;
@@ -30,8 +36,7 @@ namespace Darclite.EditorTools
         {
             "Assets/_Project/Art/Environment/GrassClump.fbx",
             "Assets/_Project/Art/Environment/StonePathDetail.fbx",
-            "Assets/_Project/Art/Environment/StonePaver.fbx",
-            "Assets/_Project/Art/Environment/Tree.fbx"
+            "Assets/_Project/Art/Environment/StonePaver.fbx"
         };
 
         private void OnPostprocessModel(GameObject model)
