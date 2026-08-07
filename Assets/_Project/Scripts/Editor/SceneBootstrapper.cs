@@ -166,8 +166,17 @@ namespace Darclite.EditorTools
         // and the stone path standing up on edge instead of lying flat. Turning Bake Axis Conversion
         // on makes the importer write the correction straight into the vertex data instead, which
         // fixes both the normal-rendering case and the raw-mesh-reading Detail Mesh case at once.
-        [MenuItem("Darclite/Fix Terrain Detail Mesh Orientation")]
-        public static void FixTerrainDetailMeshOrientation()
+        // Superseded by DetailMeshOrientationFix, which corrects all four detail-brush assets
+        // uniformly via vertex-level rotation. This originally turned Bake Axis Conversion ON for
+        // just these two files, which combined with that postprocessor's rotation into a
+        // double-correction — StonePaver/Tree never got this flag, so they only had the
+        // postprocessor's rotation applied, and comparing the two revealed the postprocessor's
+        // rotation sign was actually wrong (only visible once an asymmetric mesh — the tree — showed
+        // up upside-down; symmetric grass/stone meshes couldn't reveal an up/down sign error just
+        // from bounds size). This reverts the flag so all four assets go through the identical,
+        // now-corrected postprocessor path with nothing left double-applying on top of it.
+        [MenuItem("Darclite/Revert Terrain Detail Mesh Bake Axis Conversion")]
+        public static void RevertTerrainDetailMeshBakeAxisConversion()
         {
             string[] paths =
             {
@@ -183,12 +192,12 @@ namespace Darclite.EditorTools
                     continue;
                 }
 
-                importer.bakeAxisConversion = true;
+                importer.bakeAxisConversion = false;
                 importer.SaveAndReimport();
-                Debug.Log($"[SceneBootstrapper] Enabled Bake Axis Conversion on {path} and reimported.");
+                Debug.Log($"[SceneBootstrapper] Reverted Bake Axis Conversion on {path}.");
             }
 
-            Debug.Log("[SceneBootstrapper] GrassClump.fbx and StonePathDetail.fbx reimported with corrected orientation. If you already added them as Terrain detail prototypes, remove and re-add them from the Terrain's Paint Details list (or just repaint) so it picks up the fixed meshes.");
+            Debug.Log("[SceneBootstrapper] Now run 'Darclite/Force Reimport Detail Meshes' to reapply the corrected postprocessor rotation to all four assets consistently.");
         }
 
         // Prints each mesh's actual local-space axis extents so we can tell exactly which axis is
@@ -203,7 +212,8 @@ namespace Darclite.EditorTools
             {
                 "Assets/_Project/Art/Environment/GrassClump.fbx",
                 "Assets/_Project/Art/Environment/StonePathDetail.fbx",
-                "Assets/_Project/Art/Environment/StonePaver.fbx"
+                "Assets/_Project/Art/Environment/StonePaver.fbx",
+                "Assets/_Project/Art/Environment/Tree.fbx"
             };
 
             foreach (string path in paths)
@@ -279,6 +289,167 @@ namespace Darclite.EditorTools
             EditorUtility.SetDirty(terrainData);
             AssetDatabase.SaveAssets();
             Debug.Log("[SceneBootstrapper] Grass detail prototype Width/Height reset to 0.8-1.2. Already-painted grass should update immediately since these are read live at render time — no repaint needed.");
+        }
+
+        private const string TreeModelPath = "Assets/_Project/Art/Environment/Tree.fbx";
+        private const string TreeTintSwatchPath = "Assets/_Project/Art/Environment/TreeTintSwatch.png";
+        private const string TreeMaterialPath = "Assets/_Project/Art/Environment/TreeDetailSingle.mat";
+
+        // Unity Terrain's Paint Trees system is built around the legacy Built-in Render Pipeline's
+        // tree billboarding, which expects Nature/Soft Occlusion Bark or Leaves — this project runs
+        // URP, which doesn't execute that shader's lighting model the same way, so this is genuinely
+        // a "try it and see" experiment rather than a known-good fix. Bark (not Leaves) is used since
+        // the tree's swatch texture has no alpha channel for Leaves' cutout mode.
+        [MenuItem("Darclite/Try Nature Soft Occlusion Shader On Tree")]
+        public static void TryNatureSoftOcclusionShaderOnTree()
+        {
+            Material treeMaterial = AssetDatabase.LoadAssetAtPath<Material>(TreeMaterialPath);
+            if (treeMaterial == null)
+            {
+                Debug.LogError($"[SceneBootstrapper] Could not find {TreeMaterialPath}. Run 'Darclite/Setup Tree Two-Tone Material' first.");
+                return;
+            }
+
+            Shader natureShader = Shader.Find("Nature/Soft Occlusion Bark");
+            if (natureShader == null)
+            {
+                Debug.LogError("[SceneBootstrapper] Shader 'Nature/Soft Occlusion Bark' was not found — it may not be available in this project/pipeline at all.");
+                return;
+            }
+
+            treeMaterial.shader = natureShader;
+            EditorUtility.SetDirty(treeMaterial);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[SceneBootstrapper] Switched Tree's material to Nature/Soft Occlusion Bark. Look at it in the Scene view (and via Paint Trees if already placed) — if it renders pink/black/broken under URP, tell me and I'll switch it back to URP Lit and disable billboarding on the Terrain instead.");
+        }
+
+        // Nature/Soft Occlusion Bark isn't available at all in this URP project, so the tree's
+        // material stays on stock URP Lit — which Unity's Paint Trees system will still render fine
+        // up close, it just can't correctly crossfade to a billboard impostor at a distance without
+        // that shader. Setting the billboard start distance to (at least) the tree render distance
+        // means it never attempts that crossfade — trees render as their real mesh out to
+        // treeDistance, then simply cull, rather than popping to a broken billboard.
+        [MenuItem("Darclite/Disable Terrain Tree Billboarding")]
+        public static void DisableTerrainTreeBillboarding()
+        {
+            GameObject terrainObject = GameObject.Find("Terrain");
+            if (terrainObject == null)
+            {
+                Debug.LogError("[SceneBootstrapper] No 'Terrain' GameObject found in the scene.");
+                return;
+            }
+
+            Terrain terrain = terrainObject.GetComponent<Terrain>();
+            if (terrain == null)
+            {
+                Debug.LogError("[SceneBootstrapper] The 'Terrain' GameObject has no Terrain component.");
+                return;
+            }
+
+            terrain.treeBillboardDistance = terrain.treeDistance;
+            EditorUtility.SetDirty(terrain);
+
+            Debug.Log($"[SceneBootstrapper] Set treeBillboardDistance to match treeDistance ({terrain.treeDistance}) — trees now render as their real mesh out to that range and cull beyond it instead of crossfading to a billboard.");
+        }
+
+        // Tree.fbx was collapsed to a single material to satisfy Unity Terrain's one-material-per-
+        // detail-prototype rule, which loses the bark/leaf color split. To get a two-tone look back
+        // without a custom shader, the trunk and canopy vertices were UV'd (in Blender) to sample the
+        // left vs. right half of this small swatch texture — stock URP Lit just needs a Base Map, so
+        // this works with zero shader work. Point filtering + Clamp wrap keep the two halves from
+        // bleeding into each other at the seam.
+        [MenuItem("Darclite/Setup Tree Two-Tone Material")]
+        public static void SetupTreeTwoToneMaterial()
+        {
+            Color barkColor = new Color(0.30f, 0.22f, 0.15f);
+            Color leafColor = new Color(0.28f, 0.40f, 0.20f);
+
+            const int size = 8;
+            Color[] pixels = new Color[size];
+            for (int i = 0; i < size; i++)
+            {
+                pixels[i] = i < size / 2 ? barkColor : leafColor;
+            }
+
+            Texture2D texture = new Texture2D(size, 1, TextureFormat.RGBA32, false);
+            texture.SetPixels(pixels);
+            texture.Apply();
+            File.WriteAllBytes(TreeTintSwatchPath, texture.EncodeToPNG());
+            Object.DestroyImmediate(texture);
+
+            AssetDatabase.ImportAsset(TreeTintSwatchPath, ImportAssetOptions.ForceUpdate);
+            TextureImporter textureImporter = AssetImporter.GetAtPath(TreeTintSwatchPath) as TextureImporter;
+            if (textureImporter != null)
+            {
+                textureImporter.mipmapEnabled = false;
+                textureImporter.filterMode = FilterMode.Point;
+                textureImporter.wrapMode = TextureWrapMode.Clamp;
+                textureImporter.SaveAndReimport();
+            }
+
+            // Tree.fbx's material starts out embedded in the model asset (no standalone .mat file).
+            // ModelImporterMaterialLocation.External is obsolete in this Unity version, so instead
+            // this duplicates the embedded material out to its own persistent asset and tells the
+            // importer to remap to it — the modern equivalent of "extract materials."
+            ModelImporter modelImporter = AssetImporter.GetAtPath(TreeModelPath) as ModelImporter;
+            if (modelImporter == null)
+            {
+                Debug.LogError($"[SceneBootstrapper] Could not find a ModelImporter at {TreeModelPath}. Import Tree.fbx first.");
+                return;
+            }
+
+            // An earlier version of this tool set materialLocation to the now-unsupported External
+            // value, which got baked into Tree.fbx.meta and appears to be why Unity wasn't generating
+            // any Material sub-asset at all (not even embedded). Force it back to the supported
+            // InPrefab value before doing anything else.
+            if (modelImporter.materialLocation != ModelImporterMaterialLocation.InPrefab)
+            {
+                modelImporter.materialLocation = ModelImporterMaterialLocation.InPrefab;
+                modelImporter.SaveAndReimport();
+            }
+
+            const string extractedMaterialPath = "Assets/_Project/Art/Environment/TreeDetailSingle.mat";
+            Material treeMaterial = AssetDatabase.LoadAssetAtPath<Material>(extractedMaterialPath);
+            if (treeMaterial == null)
+            {
+                // Re-exporting Tree.fbx from Blender after the model's first import can leave
+                // Unity's cached import stale — its material data was verified present in the
+                // actual file on disk, but the previously-cached import can still be missing the
+                // Material sub-asset. Forcing a full reimport here before searching clears that.
+                AssetDatabase.ImportAsset(TreeModelPath, ImportAssetOptions.ForceUpdate);
+                Object[] subAssets = AssetDatabase.LoadAllAssetsAtPath(TreeModelPath);
+                List<Material> embeddedMaterials = new List<Material>();
+                foreach (Object asset in subAssets)
+                {
+                    if (asset is Material material) embeddedMaterials.Add(material);
+                }
+
+                Material embeddedMaterial = embeddedMaterials.Count == 1
+                    ? embeddedMaterials[0]
+                    : embeddedMaterials.Find(m => m.name.Contains("Tree"));
+
+                if (embeddedMaterial == null)
+                {
+                    string subAssetList = string.Join(", ", System.Array.ConvertAll(subAssets, a => a == null ? "null" : $"{a.GetType().Name}:{a.name}"));
+                    Debug.LogError($"[SceneBootstrapper] Could not find an embedded material inside {TreeModelPath}. Sub-assets found ({subAssets.Length}): {subAssetList}");
+                    return;
+                }
+
+                treeMaterial = Object.Instantiate(embeddedMaterial);
+                treeMaterial.name = embeddedMaterial.name;
+                AssetDatabase.CreateAsset(treeMaterial, extractedMaterialPath);
+                modelImporter.AddRemap(new AssetImporter.SourceAssetIdentifier(embeddedMaterial), treeMaterial);
+                modelImporter.SaveAndReimport();
+            }
+
+            Texture2D swatch = AssetDatabase.LoadAssetAtPath<Texture2D>(TreeTintSwatchPath);
+            treeMaterial.SetTexture("_BaseMap", swatch);
+            treeMaterial.SetColor("_BaseColor", Color.white);
+            EditorUtility.SetDirty(treeMaterial);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[SceneBootstrapper] Tree is now two-tone: bark-brown trunk, leaf-green canopy, one material, no custom shader. If the tree is already added as a Terrain detail prototype, remove and re-add it (or repaint) to pick up the material change.");
         }
 
         private static TerrainLayer GetOrCreateGrassTerrainLayer()
@@ -3231,6 +3402,25 @@ namespace Darclite.EditorTools
                 }
                 renderer.sharedMaterials = materials;
             }
+        }
+
+        // The blue overlay after baking is drawn by NavMeshSurface's own Editor gizmo (this project
+        // bakes via the Unity.AI.Navigation NavMeshSurface component, not the old static NavMesh
+        // system) — the same per-type checkbox as the Scene view's Gizmos dropdown. The legacy
+        // NavMeshVisualizationSettings.showNavigation API is obsolete/non-functional in this Unity
+        // version, so this toggles the gizmo directly instead.
+        private const string NavMeshOverlayVisiblePrefKey = "Darclite_NavMeshOverlayVisible";
+
+        [MenuItem("Darclite/Toggle NavMesh Overlay")]
+        public static void ToggleNavMeshOverlay()
+        {
+            // GizmoUtility has no getter for current state in this Unity version, so the on/off
+            // state is tracked ourselves rather than read back from the gizmo system.
+            bool currentlyVisible = EditorPrefs.GetBool(NavMeshOverlayVisiblePrefKey, true);
+            bool newState = !currentlyVisible;
+            GizmoUtility.SetGizmoEnabled(typeof(NavMeshSurface), newState);
+            EditorPrefs.SetBool(NavMeshOverlayVisiblePrefKey, newState);
+            Debug.Log($"[SceneBootstrapper] NavMesh overlay is now {(newState ? "ON" : "OFF")}.");
         }
 
         [MenuItem("Darclite/Bake NavMesh")]

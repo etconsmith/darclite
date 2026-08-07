@@ -15,9 +15,13 @@ namespace Darclite.EditorTools
     // Unity Terrain's Detail Mesh renderer reads raw local mesh vertices directly and ignores both,
     // so the Blender-space orientation and true (tiny) size show through directly.
     //
-    // This rotates each affected mesh's vertex data by 90 degrees about local X (Blender's Z-up ->
-    // Y-up swap) and scales it up 100x every time it's (re)imported, so the fix survives future
-    // reimports without depending on the original Blender scene still existing.
+    // This rotates each affected mesh's vertex data by -90 degrees about local X (Blender's Z-up ->
+    // Y-up swap, verified against Tree.fbx since its asymmetric base-to-canopy shape is the only one
+    // of the four that visibly reveals an upside-down sign error — the symmetric grass/stone meshes
+    // can't) and scales it up 100x every time it's (re)imported, so the fix survives future reimports
+    // without depending on the original Blender scene still existing. Requires
+    // SceneBootstrapper.RevertTerrainDetailMeshBakeAxisConversion to have been run once on
+    // GrassClump/StonePathDetail so this is the only correction being applied to any of the four.
     public class DetailMeshOrientationFix : AssetPostprocessor
     {
         private const float ScaleCorrection = 100f;
@@ -26,7 +30,8 @@ namespace Darclite.EditorTools
         {
             "Assets/_Project/Art/Environment/GrassClump.fbx",
             "Assets/_Project/Art/Environment/StonePathDetail.fbx",
-            "Assets/_Project/Art/Environment/StonePaver.fbx"
+            "Assets/_Project/Art/Environment/StonePaver.fbx",
+            "Assets/_Project/Art/Environment/Tree.fbx"
         };
 
         private void OnPostprocessModel(GameObject model)
@@ -36,7 +41,7 @@ namespace Darclite.EditorTools
                 return;
             }
 
-            Quaternion correction = Quaternion.Euler(90f, 0f, 0f);
+            Quaternion correction = Quaternion.Euler(-90f, 0f, 0f);
             MeshFilter[] meshFilters = model.GetComponentsInChildren<MeshFilter>(true);
             foreach (MeshFilter meshFilter in meshFilters)
             {
@@ -48,6 +53,21 @@ namespace Darclite.EditorTools
                 {
                     vertices[i] = (correction * vertices[i]) * ScaleCorrection;
                 }
+
+                // Each of these was built in Blender with its origin at the bounding-box center
+                // (object.origin_set BOUNDS), not at its base. Terrain places detail instances with
+                // the prototype's origin exactly on the ground, so a center-pivoted mesh ends up
+                // buried up to its middle. Shift every vertex up so the lowest point sits at Y=0.
+                float minY = float.MaxValue;
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    if (vertices[i].y < minY) minY = vertices[i].y;
+                }
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    vertices[i].y -= minY;
+                }
+
                 mesh.vertices = vertices;
 
                 Vector3[] normals = mesh.normals;
@@ -61,11 +81,10 @@ namespace Darclite.EditorTools
                 }
 
                 mesh.RecalculateBounds();
-                // Recompute rather than manually rotate the baked tangents — hand-rotating them
-                // was causing Unity's importer to report "inconsistent result" across reimports
-                // (likely fighting with its own Mikktspace tangent-generation step), and neither
-                // mesh needs custom baked tangents in the first place.
-                mesh.RecalculateTangents();
+                // Deliberately leave tangents untouched — none of these meshes use normal maps, so
+                // tangent data is unused either way, and both hand-rotating baked tangents and
+                // calling RecalculateTangents() were ruled out as the source of Unity's "importer
+                // generated inconsistent result" warning (it persisted after removing both).
             }
         }
 
@@ -74,8 +93,23 @@ namespace Darclite.EditorTools
         {
             foreach (string path in AffectedModelPaths)
             {
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
-                Debug.Log($"[DetailMeshOrientationFix] Reimported {path} with the orientation + 100x scale correction applied.");
+                // All four of these went through a Blender join() at some point, which can leave
+                // coincident/duplicate vertices along seams. Unity's FBX importer welds those during
+                // import, and that welding step appears to be order-dependent for these meshes,
+                // which is the likely source of the "importer generated inconsistent result"
+                // warning on reimport. None of these need welding at this poly count/visual scale,
+                // so just turn it off rather than chase the non-determinism further.
+                ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (importer != null && importer.weldVertices)
+                {
+                    importer.weldVertices = false;
+                    importer.SaveAndReimport();
+                }
+                else
+                {
+                    AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                }
+                Debug.Log($"[DetailMeshOrientationFix] Reimported {path} with the orientation, scale, and ground-pivot correction applied.");
             }
 
             Debug.Log("[DetailMeshOrientationFix] Done. Run 'Darclite/Debug Print Detail Mesh Bounds' to confirm — sizes should now read in real meters and the tall/thin axis should be on Y instead of Z. If GrassClump or StonePathDetail were already added as Terrain detail prototypes with manually-inflated Width/Height sliders to compensate for the old tiny size, reset those sliders back down (~0.8-1.2) now that the mesh itself is correctly sized, or they'll be 100x too big. If already painted, remove and re-add the detail prototypes (or repaint) to pick up the corrected meshes.");
