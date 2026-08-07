@@ -85,6 +85,13 @@ namespace Darclite.EditorTools
         // stylized sculpting rather than realistic terrain.
         private const int TerrainHeightmapResolution = 129;
 
+        // A freshly-constructed TerrainData (via `new TerrainData()`) doesn't allocate any detail
+        // map storage on its own — without explicitly setting this, the Paint Details tool has
+        // nowhere to write painted grass/detail-mesh data, which silently fails instead of erroring
+        // clearly on which setting is missing.
+        private const int TerrainDetailResolution = 512;
+        private const int TerrainDetailResolutionPerPatch = 16;
+
         [MenuItem("Darclite/Create Terrain")]
         public static void CreateTerrain()
         {
@@ -107,6 +114,10 @@ namespace Darclite.EditorTools
                 size = new Vector3(TerrainWidth, TerrainMaxHeight, TerrainWidth),
                 terrainLayers = new[] { GetOrCreateGrassTerrainLayer() }
             };
+            // Must be set before use — this allocates the actual storage the Paint Details brush
+            // writes into. A fresh TerrainData has no detail map storage at all, so without this
+            // the brush has nowhere to write and painting silently does nothing.
+            terrainData.SetDetailResolution(TerrainDetailResolution, TerrainDetailResolutionPerPatch);
             AssetDatabase.CreateAsset(terrainData, TerrainDataPath);
 
             GameObject terrainObject = Terrain.CreateTerrainGameObject(terrainData);
@@ -121,6 +132,153 @@ namespace Darclite.EditorTools
             Selection.activeGameObject = terrainObject;
 
             Debug.Log($"Terrain created ({TerrainWidth}x{TerrainWidth}, starting flat at y=0). The old 'Floor' is now redundant — disable or delete it once you're happy with the terrain, then re-run 'Darclite/Bake NavMesh'.");
+        }
+
+        // One-off repair for a terrain that was already created before CreateTerrain() started
+        // calling SetDetailResolution — its TerrainData asset has no detail map storage allocated,
+        // which is why Paint Details silently does nothing on it. CreateTerrain() itself can't fix
+        // this in place because it skips creation whenever a "Terrain" object already exists in the
+        // scene (so as not to blow away any heightmap sculpting already done).
+        [MenuItem("Darclite/Fix Terrain Detail Resolution")]
+        public static void FixTerrainDetailResolution()
+        {
+            TerrainData terrainData = AssetDatabase.LoadAssetAtPath<TerrainData>(TerrainDataPath);
+            if (terrainData == null)
+            {
+                Debug.LogError($"[SceneBootstrapper] No TerrainData found at {TerrainDataPath} — run 'Darclite/Create Terrain' first.");
+                return;
+            }
+
+            terrainData.SetDetailResolution(TerrainDetailResolution, TerrainDetailResolutionPerPatch);
+            EditorUtility.SetDirty(terrainData);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[SceneBootstrapper] Terrain detail resolution allocated — Paint Details should now work. If the Terrain window was already open, close and reopen it (or reselect the Terrain object) before painting.");
+        }
+
+        // GrassClump.fbx and StonePathDetail.fbx were imported with the FBX importer's default
+        // "Bake Axis Conversion" OFF. For normal prefab use that's invisible — Unity stores the
+        // Blender-to-Unity (Z-up to Y-up) correction as a rotation on the imported root Transform,
+        // and everything downstream (regular rendering, physics, etc.) respects that transform. But
+        // Unity Terrain's Detail Mesh renderer reads each prototype's raw mesh vertex data directly
+        // for GPU instancing and does not apply that corrective root rotation, so the pre-conversion
+        // Blender-space orientation shows through — grass blades lying flat instead of standing up,
+        // and the stone path standing up on edge instead of lying flat. Turning Bake Axis Conversion
+        // on makes the importer write the correction straight into the vertex data instead, which
+        // fixes both the normal-rendering case and the raw-mesh-reading Detail Mesh case at once.
+        [MenuItem("Darclite/Fix Terrain Detail Mesh Orientation")]
+        public static void FixTerrainDetailMeshOrientation()
+        {
+            string[] paths =
+            {
+                "Assets/_Project/Art/Environment/GrassClump.fbx",
+                "Assets/_Project/Art/Environment/StonePathDetail.fbx"
+            };
+            foreach (string path in paths)
+            {
+                ModelImporter importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (importer == null)
+                {
+                    Debug.LogError($"[SceneBootstrapper] Could not find a ModelImporter at {path}.");
+                    continue;
+                }
+
+                importer.bakeAxisConversion = true;
+                importer.SaveAndReimport();
+                Debug.Log($"[SceneBootstrapper] Enabled Bake Axis Conversion on {path} and reimported.");
+            }
+
+            Debug.Log("[SceneBootstrapper] GrassClump.fbx and StonePathDetail.fbx reimported with corrected orientation. If you already added them as Terrain detail prototypes, remove and re-add them from the Terrain's Paint Details list (or just repaint) so it picks up the fixed meshes.");
+        }
+
+        // Prints each mesh's actual local-space axis extents so we can tell exactly which axis is
+        // "up" after import, instead of guessing from how it looks in the Scene view. For a grass
+        // clump the tall axis (blade height) should be Y; for a flat stone path the SHORT axis
+        // (thickness) should be Y. Whichever axis is actually largest/smallest tells us the real
+        // orientation the Detail Mesh renderer is reading, independent of any GameObject transform.
+        [MenuItem("Darclite/Debug Print Detail Mesh Bounds")]
+        public static void DebugPrintDetailMeshBounds()
+        {
+            string[] paths =
+            {
+                "Assets/_Project/Art/Environment/GrassClump.fbx",
+                "Assets/_Project/Art/Environment/StonePathDetail.fbx",
+                "Assets/_Project/Art/Environment/StonePaver.fbx"
+            };
+
+            foreach (string path in paths)
+            {
+                GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (modelAsset == null)
+                {
+                    Debug.LogError($"[SceneBootstrapper] Could not find model at {path}");
+                    continue;
+                }
+
+                MeshFilter[] meshFilters = modelAsset.GetComponentsInChildren<MeshFilter>(true);
+                if (meshFilters.Length == 0)
+                {
+                    Debug.LogError($"[SceneBootstrapper] {path} has no MeshFilters at all.");
+                    continue;
+                }
+
+                foreach (MeshFilter meshFilter in meshFilters)
+                {
+                    Mesh mesh = meshFilter.sharedMesh;
+                    if (mesh == null) continue;
+                    Bounds bounds = mesh.bounds;
+                    Debug.Log($"[SceneBootstrapper] {path} -> '{meshFilter.name}' local bounds size: X={bounds.size.x:F3}  Y={bounds.size.y:F3}  Z={bounds.size.z:F3}");
+                }
+            }
+        }
+
+        // The grass mesh used to import 100x too small, so its Terrain detail prototype's
+        // Width/Height sliders were manually cranked up to compensate and make it visible at all.
+        // Now that DetailMeshOrientationFix bakes the correct real-world scale straight into the
+        // mesh, those inflated sliders double up and make every painted instance comically huge.
+        // This resets them back to Unity's own neutral default (0.8-1.2, i.e. "roughly the mesh's
+        // own modeled size, with a little natural size variance") on the Terrain's existing
+        // GrassClump detail prototype.
+        [MenuItem("Darclite/Reset Grass Detail Scale")]
+        public static void ResetGrassDetailScale()
+        {
+            TerrainData terrainData = AssetDatabase.LoadAssetAtPath<TerrainData>(TerrainDataPath);
+            if (terrainData == null)
+            {
+                Debug.LogError($"[SceneBootstrapper] No TerrainData found at {TerrainDataPath}.");
+                return;
+            }
+
+            GameObject grassModel = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/_Project/Art/Environment/GrassClump.fbx");
+            if (grassModel == null)
+            {
+                Debug.LogError("[SceneBootstrapper] Could not find GrassClump.fbx.");
+                return;
+            }
+
+            DetailPrototype[] prototypes = terrainData.detailPrototypes;
+            bool found = false;
+            for (int i = 0; i < prototypes.Length; i++)
+            {
+                if (prototypes[i].prototype != grassModel) continue;
+
+                prototypes[i].minWidth = 0.8f;
+                prototypes[i].maxWidth = 1.2f;
+                prototypes[i].minHeight = 0.8f;
+                prototypes[i].maxHeight = 1.2f;
+                found = true;
+            }
+
+            if (!found)
+            {
+                Debug.LogWarning("[SceneBootstrapper] No Terrain detail prototype using GrassClump.fbx was found — nothing to reset.");
+                return;
+            }
+
+            terrainData.detailPrototypes = prototypes;
+            EditorUtility.SetDirty(terrainData);
+            AssetDatabase.SaveAssets();
+            Debug.Log("[SceneBootstrapper] Grass detail prototype Width/Height reset to 0.8-1.2. Already-painted grass should update immediately since these are read live at render time — no repaint needed.");
         }
 
         private static TerrainLayer GetOrCreateGrassTerrainLayer()
